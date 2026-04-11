@@ -30,6 +30,7 @@ class InvoiceCard(QFrame):
     def __init__(self, inv: Invoice, parent=None):
         super().__init__(parent)
         self.file_path = inv.file_path
+        self.status = inv.status
         self.setFrameStyle(QFrame.Shape.StyledPanel)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
@@ -241,9 +242,13 @@ class InvoiceList(QWidget):
 
     def _update_delete_btn(self):
         has_selected = any(c.is_checked() for c in self._cards.values())
+        has_failed_selected = any(
+            c.is_checked() and c.status == InvoiceStatus.FAILED
+            for c in self._cards.values()
+        )
         self._del_selected_btn.setEnabled(has_selected)
         self._confirm_selected_btn.setEnabled(has_selected)
-        self._reocr_selected_btn.setEnabled(has_selected)
+        self._reocr_selected_btn.setEnabled(has_failed_selected)
 
     def get_selected_file_paths(self) -> list:
         return [fp for fp, card in self._cards.items() if card.is_checked()]
