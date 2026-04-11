@@ -1,0 +1,116 @@
+name: Build macOS & Windows
+
+on:
+  push:
+    tags:
+      - "v*"          # 打 tag 时触发，如 v1.0.0
+  workflow_dispatch:  # 也可以手动在 GitHub 网页上点 Run workflow
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS
+            artifact: 发票识别助手-macOS
+          - os: windows-latest
+            name: Windows
+            artifact: 发票识别助手-Windows
+
+    runs-on: ${{ matrix.os }}
+    name: Build ${{ matrix.name }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build with PyInstaller (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          pyinstaller invoice_assistant.spec --clean
+          # 打包成 .app
+          mkdir -p "dist/发票识别助手.app/Contents/MacOS"
+          mkdir -p "dist/发票识别助手.app/Contents/Resources"
+          cp -r dist/invoice-assistant/* "dist/发票识别助手.app/Contents/MacOS/"
+          cat > "dist/发票识别助手.app/Contents/Info.plist" << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>invoice-assistant</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.invoice.assistant</string>
+              <key>CFBundleName</key>
+              <string>发票识别助手</string>
+              <key>CFBundleDisplayName</key>
+              <string>发票识别助手</string>
+              <key>CFBundleVersion</key>
+              <string>1.0.0</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0.0</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>10.14</string>
+              <key>NSHighResolutionCapable</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+          # ad-hoc 签名
+          codesign --deep --force --sign - "dist/发票识别助手.app" || true
+          # 压缩成 zip 供下载
+          cd dist && zip -r "../${{ matrix.artifact }}.zip" "发票识别助手.app"
+
+      - name: Build with PyInstaller (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          pyinstaller invoice_assistant.spec --clean
+          # 压缩成 zip 供下载
+          Compress-Archive -Path dist\invoice-assistant -DestinationPath "${{ matrix.artifact }}.zip"
+        shell: pwsh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.zip
+          retention-days: 30
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            发票识别助手-macOS/发票识别助手-macOS.zip
+            发票识别助手-Windows/发票识别助手-Windows.zip
+          body: |
+            ## 发票识别登记助手
+
+            ### 下载
+            - **macOS**: 下载 `发票识别助手-macOS.zip`，解压后双击 `.app` 运行
+            - **Windows**: 下载 `发票识别助手-Windows.zip`，解压后双击 `invoice-assistant.exe` 运行
+
+            ### 首次使用
+            启动后进入「设置」页，填入百度 OCR 的 AK/SK 即可开始识别发票。
