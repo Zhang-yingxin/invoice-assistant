@@ -382,7 +382,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "导出 Excel", "暂无已确认的发票，请先确认发票后再导出。")
             return
         default_path = self._db.get_setting("export_path", "")
-        dlg = ExportSummaryDialog(invoices, default_path, self._current_batch_id, self)
+        selected_fps = self._inv_list.get_selected_file_paths()
+        dlg = ExportSummaryDialog(invoices, default_path, self._current_batch_id, self,
+                                  selected_file_paths=selected_fps)
         dlg.exec()
 
     def _clear_all(self):

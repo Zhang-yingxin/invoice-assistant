@@ -11,13 +11,15 @@ CONFIRMED_STATUSES = {InvoiceStatus.CONFIRMED, InvoiceStatus.MANUAL_DONE}
 
 class ExportSummaryDialog(QDialog):
     def __init__(self, invoices: List[Invoice], default_path: str = "",
-                 current_batch_id: str = "", parent=None):
+                 current_batch_id: str = "", parent=None,
+                 selected_file_paths: List[str] = None):
         super().__init__(parent)
         self.setWindowTitle("导出 Excel")
         self.setMinimumWidth(420)
         self._invoices = invoices
         self._default_path = default_path
         self._current_batch_id = current_batch_id
+        self._selected_file_paths = selected_file_paths or []
         layout = QVBoxLayout(self)
 
         # 导出范围选择
@@ -25,15 +27,26 @@ class ExportSummaryDialog(QDialog):
         self._scope_group = QButtonGroup(self)
         self._rb_batch = QRadioButton("仅本次导入的发票")
         self._rb_all = QRadioButton("全部发票")
-        self._rb_batch.setChecked(True)
+        self._rb_selected = QRadioButton(f"仅所选发票（{len(self._selected_file_paths)} 张）")
+        self._rb_selected.setEnabled(bool(self._selected_file_paths))
         self._scope_group.addButton(self._rb_batch, 0)
         self._scope_group.addButton(self._rb_all, 1)
+        self._scope_group.addButton(self._rb_selected, 2)
+
+        # 默认选中逻辑
+        if self._selected_file_paths:
+            self._rb_selected.setChecked(True)
+        elif current_batch_id:
+            self._rb_batch.setChecked(True)
+        else:
+            self._rb_all.setChecked(True)
+
+        layout.addWidget(self._rb_selected)
         layout.addWidget(self._rb_batch)
         layout.addWidget(self._rb_all)
 
-        # 如果没有 batch_id（从未导入过），默认全部
+        # 如果没有 batch_id（从未导入过），禁用本次导入选项
         if not current_batch_id:
-            self._rb_all.setChecked(True)
             self._rb_batch.setEnabled(False)
 
         # 包含未确认选项（必须在 _update_stats 之前创建）
@@ -60,6 +73,9 @@ class ExportSummaryDialog(QDialog):
         self._update_stats()
 
     def _get_scope_invoices(self) -> List[Invoice]:
+        if self._rb_selected.isChecked():
+            fps = set(self._selected_file_paths)
+            return [i for i in self._invoices if i.file_path in fps]
         if self._rb_batch.isChecked() and self._current_batch_id:
             return [i for i in self._invoices if i.batch_id == self._current_batch_id]
         return self._invoices

@@ -218,8 +218,11 @@ class InvoiceList(QWidget):
         self._del_selected_btn.setEnabled(has_selected)
         self._confirm_selected_btn.setEnabled(has_selected)
 
+    def get_selected_file_paths(self) -> list:
+        return [fp for fp, card in self._cards.items() if card.is_checked()]
+
     def _on_confirm_selected(self):
-        selected = [fp for fp, card in self._cards.items() if card.is_checked()]
+        selected = self.get_selected_file_paths()
         if selected:
             self.confirm_selected.emit(selected)
 
