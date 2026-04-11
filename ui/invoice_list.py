@@ -48,7 +48,7 @@ class InvoiceCard(QFrame):
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(2)
-        filename = inv.file_path.split("/")[-1]
+        filename = Path(inv.file_path).name
         name = QLabel(filename)
         name.setWordWrap(True)
         left_layout.addWidget(name)
@@ -119,18 +119,22 @@ class InvoiceList(QWidget):
 
         # 全选/删除工具栏
         toolbar = QWidget()
-        toolbar.setStyleSheet("background: #f5f5f5; border-bottom: 1px solid #ddd;")
+        toolbar.setStyleSheet("background: #ECECEC; border-bottom: 1px solid #BDBDBD;")
         tb_layout = QHBoxLayout(toolbar)
-        tb_layout.setContentsMargins(8, 4, 8, 4)
+        tb_layout.setContentsMargins(8, 5, 8, 5)
         tb_layout.setSpacing(6)
         self._select_all_cb = QCheckBox("全选")
+        self._select_all_cb.setStyleSheet("color: #212121; font-weight: bold;")
         self._select_all_cb.stateChanged.connect(self._on_select_all)
         tb_layout.addWidget(self._select_all_cb)
         tb_layout.addStretch()
         self._del_selected_btn = QPushButton("删除所选")
         self._del_selected_btn.setEnabled(False)
         self._del_selected_btn.setStyleSheet(
-            "QPushButton { color: #e53935; } QPushButton:disabled { color: #ccc; }"
+            "QPushButton { color: #fff; background: #e53935; border: none; "
+            "border-radius: 3px; padding: 3px 10px; font-weight: bold; }"
+            "QPushButton:hover { background: #c62828; }"
+            "QPushButton:disabled { background: #E0E0E0; color: #9E9E9E; }"
         )
         self._del_selected_btn.clicked.connect(self._on_delete_selected)
         tb_layout.addWidget(self._del_selected_btn)
