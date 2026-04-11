@@ -40,9 +40,9 @@ jobs:
           # spec 里已有 BUNDLE，直接生成 .app
           pyinstaller invoice_assistant.spec --clean -y
           # ad-hoc 签名（忽略 dist-info 目录报错）
-          codesign --deep --force --sign - "dist/发票识别助手.app" || true
+          codesign --deep --force --sign - "dist/IA.app" || true
           # 压缩成 zip 供下载
-          cd dist && zip -r "../${{ matrix.artifact }}.zip" "发票识别助手.app"
+          cd dist && zip -r "../${{ matrix.artifact }}.zip" "IA.app"
 
       - name: Build with PyInstaller (Windows)
         if: runner.os == 'Windows'
