@@ -64,7 +64,7 @@ class MainWindow(QMainWindow):
         self._worker = None
         self._ocr_errors = []
         self._current_batch_id: str = ""
-        self.setWindowTitle("发票识别助手")
+        self.setWindowTitle("IA")
         self.resize(1200, 800)
         self.setMinimumSize(800, 500)
 

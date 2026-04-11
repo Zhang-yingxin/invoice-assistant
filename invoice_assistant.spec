@@ -57,12 +57,12 @@ coll = COLLECT(
 # macOS .app bundle
 app = BUNDLE(
     coll,
-    name='发票识别助手.app',
+    name='IA.app',
     icon='assets/ia.icns',
     bundle_identifier='com.invoice.assistant',
     info_plist={
-        'CFBundleName': '发票识别助手',
-        'CFBundleDisplayName': '发票识别助手',
+        'CFBundleName': 'IA',
+        'CFBundleDisplayName': 'IA',
         'CFBundleVersion': '1.0.1',
         'CFBundleShortVersionString': '1.0.1',
         'NSHighResolutionCapable': True,
