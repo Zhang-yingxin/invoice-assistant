@@ -7,7 +7,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=['pdfminer.six', 'PyQt6.QtSvg'],
+    hiddenimports=['PyQt6.QtSvg'],
     hookspath=[],
     runtime_hooks=[],
     excludes=[],
@@ -40,4 +40,19 @@ coll = COLLECT(
     upx=True,
     upx_exclude=[],
     name='invoice-assistant',
+)
+
+# macOS .app bundle
+app = BUNDLE(
+    coll,
+    name='发票识别助手.app',
+    bundle_identifier='com.invoice.assistant',
+    info_plist={
+        'CFBundleName': '发票识别助手',
+        'CFBundleDisplayName': '发票识别助手',
+        'CFBundleVersion': '1.0.1',
+        'CFBundleShortVersionString': '1.0.1',
+        'NSHighResolutionCapable': True,
+        'LSMinimumSystemVersion': '10.14',
+    },
 )
