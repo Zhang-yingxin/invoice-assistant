@@ -86,12 +86,22 @@ class MainWindow(QMainWindow):
         )]
         if recovering:
             banner_widget = QWidget()
-            banner_widget.setStyleSheet("background: #FFF3CD;")
+            banner_widget.setStyleSheet(
+                "background: #FFF3CD; border-bottom: 1px solid #FFD54F;"
+            )
             bl = QHBoxLayout(banner_widget)
-            bl.addWidget(QLabel(
-                f"检测到上次未完成的工作，已为您恢复 {len(recovering)} 张发票的处理状态。"
-            ))
+            bl.setContentsMargins(12, 6, 12, 6)
+            lbl = QLabel(
+                f"⚠ 检测到上次未完成的工作，已为您恢复 {len(recovering)} 张发票的处理状态。"
+            )
+            lbl.setStyleSheet("color: #5D4037; font-weight: bold;")
+            bl.addWidget(lbl)
             clear_btn = QPushButton("清除并重新开始")
+            clear_btn.setStyleSheet(
+                "QPushButton { color: #fff; background: #E65100; border: none; "
+                "border-radius: 3px; padding: 3px 10px; font-weight: bold; }"
+                "QPushButton:hover { background: #BF360C; }"
+            )
             clear_btn.clicked.connect(self._clear_all)
             bl.addWidget(clear_btn)
             v_layout.addWidget(banner_widget)
