@@ -1,10 +1,14 @@
+from pathlib import Path
 from typing import List
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QScrollArea, QFrame,
     QHBoxLayout, QLabel
 )
 from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent
 from core.models import Invoice, InvoiceStatus
+
+SUPPORTED_SUFFIXES = {".pdf", ".jpg", ".jpeg", ".png"}
 
 STATUS_COLOR = {
     InvoiceStatus.PENDING: "#888888",
@@ -57,16 +61,27 @@ class InvoiceCard(QFrame):
 
 
 class InvoiceList(QWidget):
-    invoice_selected = pyqtSignal(str)  # file_path
+    invoice_selected = pyqtSignal(str)   # file_path
+    files_dropped = pyqtSignal(list)     # list[Path]
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setAcceptDrops(True)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
+        # 拖拽提示条（平时隐藏）
+        self._drop_hint = QLabel("拖拽发票文件或文件夹到此处导入")
+        self._drop_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._drop_hint.setStyleSheet(
+            "background: #E3F2FD; color: #1565C0; padding: 12px; "
+            "border: 2px dashed #90CAF9; border-radius: 6px; font-size: 13px;"
+        )
+        layout.addWidget(self._drop_hint)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        layout.addWidget(scroll)
+        layout.addWidget(scroll, 1)
 
         self._container = QWidget()
         self._layout = QVBoxLayout(self._container)
@@ -83,8 +98,46 @@ class InvoiceList(QWidget):
                 item.widget().deleteLater()
         self._cards.clear()
 
+        # 没有发票时显示拖拽提示，有发票时隐藏
+        self._drop_hint.setVisible(len(invoices) == 0)
+
         for inv in invoices:
             card = InvoiceCard(inv)
             card.clicked.connect(self.invoice_selected)
             self._layout.addWidget(card)
             self._cards[inv.file_path] = card
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            self._drop_hint.setVisible(True)
+            self._drop_hint.setStyleSheet(
+                "background: #BBDEFB; color: #0D47A1; padding: 12px; "
+                "border: 2px dashed #1565C0; border-radius: 6px; font-size: 13px; font-weight: bold;"
+            )
+            self._drop_hint.setText("松开鼠标即可导入")
+
+    def dragLeaveEvent(self, event):
+        # 恢复提示条状态
+        has_cards = bool(self._cards)
+        self._drop_hint.setVisible(not has_cards)
+        self._drop_hint.setStyleSheet(
+            "background: #E3F2FD; color: #1565C0; padding: 12px; "
+            "border: 2px dashed #90CAF9; border-radius: 6px; font-size: 13px;"
+        )
+        self._drop_hint.setText("拖拽发票文件或文件夹到此处导入")
+
+    def dropEvent(self, event: QDropEvent):
+        self.dragLeaveEvent(event)
+        paths: list[Path] = []
+        for url in event.mimeData().urls():
+            p = Path(url.toLocalFile())
+            if p.is_dir():
+                # 递归扫描文件夹，收集所有支持格式
+                for f in p.rglob("*"):
+                    if f.is_file() and f.suffix.lower() in SUPPORTED_SUFFIXES:
+                        paths.append(f)
+            elif p.is_file() and p.suffix.lower() in SUPPORTED_SUFFIXES:
+                paths.append(p)
+        if paths:
+            self.files_dropped.emit(paths)

@@ -114,6 +114,7 @@ class MainWindow(QMainWindow):
         inv_layout.setContentsMargins(0, 0, 0, 0)
         self._inv_list = InvoiceList()
         self._inv_list.invoice_selected.connect(self._on_invoice_selected)
+        self._inv_list.files_dropped.connect(self._start_ocr)
         inv_layout.addWidget(self._inv_list, 1)
         self._detail = DetailPanel()
         self._detail.confirmed.connect(self._on_confirm_invoice)
@@ -175,10 +176,16 @@ class MainWindow(QMainWindow):
         )
         if not files:
             return
+        self._start_ocr([Path(f) for f in files])
+
+    def _start_ocr(self, file_paths: list):
+        if self._worker and self._worker.isRunning():
+            QMessageBox.information(self, "识别中", "当前正在识别，请等待完成后再导入")
+            return
 
         to_process = []
-        for f in files:
-            fp = Path(f)
+        for fp in file_paths:
+            fp = Path(fp)
             if fp.stat().st_size > 50 * 1024 * 1024:
                 QMessageBox.warning(self, "文件过大", f"{fp.name} 超过50MB，已跳过")
                 continue
