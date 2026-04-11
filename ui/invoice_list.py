@@ -25,6 +25,7 @@ class InvoiceCard(QFrame):
     clicked = pyqtSignal(str)           # file_path
     delete_requested = pyqtSignal(str)  # file_path
     check_changed = pyqtSignal(str, bool)  # file_path, checked
+    reocr_requested = pyqtSignal(str)   # file_path
 
     def __init__(self, inv: Invoice, parent=None):
         super().__init__(parent)
@@ -79,6 +80,19 @@ class InvoiceCard(QFrame):
             warn.setToolTip(inv.error_message.replace("DUPLICATE:", "").strip())
             layout.addWidget(warn)
 
+        # 失败时显示重试按钮
+        if inv.status == InvoiceStatus.FAILED:
+            retry_btn = QPushButton("重试")
+            retry_btn.setFixedHeight(22)
+            retry_btn.setStyleSheet(
+                "QPushButton { color: #fff; background: #FF9800; border: none; "
+                "border-radius: 3px; padding: 0 8px; font-size: 11px; font-weight: bold; }"
+                "QPushButton:hover { background: #F57C00; }"
+            )
+            retry_btn.setToolTip("重新识别此发票")
+            retry_btn.clicked.connect(lambda: self.reocr_requested.emit(self.file_path))
+            layout.addWidget(retry_btn)
+
         # 删除按钮
         del_btn = QPushButton("×")
         del_btn.setFixedSize(22, 22)
@@ -105,11 +119,12 @@ class InvoiceCard(QFrame):
 
 
 class InvoiceList(QWidget):
-    invoice_selected = pyqtSignal(str)    # file_path
-    invoice_delete = pyqtSignal(str)      # file_path
-    invoices_delete_batch = pyqtSignal(list)  # list[str] file_paths
-    files_dropped = pyqtSignal(list)      # list[Path]
-    confirm_selected = pyqtSignal(list)  # list[str] file_paths
+    invoice_selected = pyqtSignal(str)       # file_path
+    invoice_delete = pyqtSignal(str)         # file_path
+    invoices_delete_batch = pyqtSignal(list) # list[str] file_paths
+    files_dropped = pyqtSignal(list)         # list[Path]
+    confirm_selected = pyqtSignal(list)      # list[str] file_paths
+    reocr_selected = pyqtSignal(list)        # list[str] file_paths
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -129,6 +144,16 @@ class InvoiceList(QWidget):
         self._select_all_cb.stateChanged.connect(self._on_select_all)
         tb_layout.addWidget(self._select_all_cb)
         tb_layout.addStretch()
+        self._reocr_selected_btn = QPushButton("重新识别所选")
+        self._reocr_selected_btn.setEnabled(False)
+        self._reocr_selected_btn.setStyleSheet(
+            "QPushButton { color: #fff; background: #FF9800; border: none; "
+            "border-radius: 3px; padding: 3px 10px; font-weight: bold; }"
+            "QPushButton:hover { background: #F57C00; }"
+            "QPushButton:disabled { background: #E0E0E0; color: #9E9E9E; }"
+        )
+        self._reocr_selected_btn.clicked.connect(self._on_reocr_selected)
+        tb_layout.addWidget(self._reocr_selected_btn)
         self._confirm_selected_btn = QPushButton("确认所选")
         self._confirm_selected_btn.setEnabled(False)
         self._confirm_selected_btn.setStyleSheet(
@@ -190,6 +215,7 @@ class InvoiceList(QWidget):
             card.clicked.connect(self.invoice_selected)
             card.delete_requested.connect(self.invoice_delete)
             card.check_changed.connect(self._on_card_check_changed)
+            card.reocr_requested.connect(lambda fp: self.reocr_selected.emit([fp]))
             self._list_layout.addWidget(card)
             self._cards[inv.file_path] = card
 
@@ -217,9 +243,15 @@ class InvoiceList(QWidget):
         has_selected = any(c.is_checked() for c in self._cards.values())
         self._del_selected_btn.setEnabled(has_selected)
         self._confirm_selected_btn.setEnabled(has_selected)
+        self._reocr_selected_btn.setEnabled(has_selected)
 
     def get_selected_file_paths(self) -> list:
         return [fp for fp, card in self._cards.items() if card.is_checked()]
+
+    def _on_reocr_selected(self):
+        selected = self.get_selected_file_paths()
+        if selected:
+            self.reocr_selected.emit(selected)
 
     def _on_confirm_selected(self):
         selected = self.get_selected_file_paths()

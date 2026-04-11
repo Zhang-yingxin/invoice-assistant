@@ -147,6 +147,7 @@ class MainWindow(QMainWindow):
         self._inv_list.invoice_delete.connect(self._on_delete_invoice)
         self._inv_list.invoices_delete_batch.connect(self._on_delete_batch)
         self._inv_list.confirm_selected.connect(self._on_confirm_selected)
+        self._inv_list.reocr_selected.connect(self._on_reocr_selected)
         self._inv_list.setMinimumWidth(260)
         splitter.addWidget(self._inv_list)
 
@@ -367,6 +368,18 @@ class MainWindow(QMainWindow):
             for fp in file_paths:
                 InvoiceRecord.delete().where(InvoiceRecord.file_path == fp).execute()
             self._refresh()
+
+    def _on_reocr_selected(self, file_paths: list):
+        if self._worker and self._worker.isRunning():
+            QMessageBox.information(self, "识别中", "当前正在识别，请等待完成后再重试")
+            return
+        # 重置状态为 PENDING，再重新识别
+        from store.db import InvoiceRecord
+        for fp in file_paths:
+            InvoiceRecord.update(
+                status=InvoiceStatus.PENDING.value, error_message=""
+            ).where(InvoiceRecord.file_path == fp).execute()
+        self._start_ocr([Path(fp) for fp in file_paths])
 
     def _on_confirm_selected(self, file_paths: list):
         for fp in file_paths:
