@@ -146,7 +146,7 @@ class MainWindow(QMainWindow):
         self._inv_list.files_dropped.connect(self._start_ocr)
         self._inv_list.invoice_delete.connect(self._on_delete_invoice)
         self._inv_list.invoices_delete_batch.connect(self._on_delete_batch)
-        self._inv_list.bulk_confirm_clicked.connect(self._on_bulk_confirm)
+        self._inv_list.confirm_selected.connect(self._on_confirm_selected)
         self._inv_list.setMinimumWidth(260)
         splitter.addWidget(self._inv_list)
 
@@ -368,9 +368,19 @@ class MainWindow(QMainWindow):
                 InvoiceRecord.delete().where(InvoiceRecord.file_path == fp).execute()
             self._refresh()
 
+    def _on_confirm_selected(self, file_paths: list):
+        for fp in file_paths:
+            self._db.update_status(fp, InvoiceStatus.CONFIRMED)
+        self._refresh()
+
     def _on_export(self):
         from ui.export_summary import ExportSummaryDialog
         invoices = self._db.get_all()
+        has_confirmed = any(i.status in (InvoiceStatus.CONFIRMED, InvoiceStatus.MANUAL_DONE)
+                            for i in invoices)
+        if not has_confirmed:
+            QMessageBox.information(self, "导出 Excel", "暂无已确认的发票，请先确认发票后再导出。")
+            return
         default_path = self._db.get_setting("export_path", "")
         dlg = ExportSummaryDialog(invoices, default_path, self._current_batch_id, self)
         dlg.exec()

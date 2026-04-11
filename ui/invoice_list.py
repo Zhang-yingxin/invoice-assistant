@@ -109,7 +109,7 @@ class InvoiceList(QWidget):
     invoice_delete = pyqtSignal(str)      # file_path
     invoices_delete_batch = pyqtSignal(list)  # list[str] file_paths
     files_dropped = pyqtSignal(list)      # list[Path]
-    bulk_confirm_clicked = pyqtSignal()
+    confirm_selected = pyqtSignal(list)  # list[str] file_paths
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -129,14 +129,16 @@ class InvoiceList(QWidget):
         self._select_all_cb.stateChanged.connect(self._on_select_all)
         tb_layout.addWidget(self._select_all_cb)
         tb_layout.addStretch()
-        self._bulk_confirm_btn = QPushButton("批量确认")
-        self._bulk_confirm_btn.setStyleSheet(
+        self._confirm_selected_btn = QPushButton("确认所选")
+        self._confirm_selected_btn.setEnabled(False)
+        self._confirm_selected_btn.setStyleSheet(
             "QPushButton { color: #fff; background: #1E5BA8; border: none; "
             "border-radius: 3px; padding: 3px 10px; font-weight: bold; }"
             "QPushButton:hover { background: #0D47A1; }"
+            "QPushButton:disabled { background: #E0E0E0; color: #9E9E9E; }"
         )
-        self._bulk_confirm_btn.clicked.connect(self.bulk_confirm_clicked)
-        tb_layout.addWidget(self._bulk_confirm_btn)
+        self._confirm_selected_btn.clicked.connect(self._on_confirm_selected)
+        tb_layout.addWidget(self._confirm_selected_btn)
         self._del_selected_btn = QPushButton("删除所选")
         self._del_selected_btn.setEnabled(False)
         self._del_selected_btn.setStyleSheet(
@@ -214,6 +216,12 @@ class InvoiceList(QWidget):
     def _update_delete_btn(self):
         has_selected = any(c.is_checked() for c in self._cards.values())
         self._del_selected_btn.setEnabled(has_selected)
+        self._confirm_selected_btn.setEnabled(has_selected)
+
+    def _on_confirm_selected(self):
+        selected = [fp for fp, card in self._cards.items() if card.is_checked()]
+        if selected:
+            self.confirm_selected.emit(selected)
 
     def _on_delete_selected(self):
         selected = [fp for fp, card in self._cards.items() if card.is_checked()]
