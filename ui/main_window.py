@@ -109,6 +109,14 @@ class MainWindow(QMainWindow):
         )
         clear_btn.clicked.connect(self._clear_all)
         bl.addWidget(clear_btn)
+        dismiss_btn = QPushButton("取消")
+        dismiss_btn.setStyleSheet(
+            "QPushButton { color: #5D4037; background: transparent; border: 1px solid #5D4037; "
+            "border-radius: 3px; padding: 3px 10px; font-weight: bold; }"
+            "QPushButton:hover { background: #FFE0B2; }"
+        )
+        dismiss_btn.clicked.connect(self._banner_widget.hide)
+        bl.addWidget(dismiss_btn)
         self._banner_widget.setVisible(bool(recovering))
         v_layout.addWidget(self._banner_widget)
 

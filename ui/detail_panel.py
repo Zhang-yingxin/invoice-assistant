@@ -8,47 +8,27 @@ from PyQt6.QtWidgets import (
     QDialog, QApplication
 )
 from PyQt6.QtCore import pyqtSignal, Qt
-from PyQt6.QtGui import QPixmap, QCursor
+from PyQt6.QtGui import QPixmap
 from core.models import Invoice, InvoiceSheet, InvoiceStatus
 
 SHEET_OPTIONS = [s.value for s in InvoiceSheet]
 
 
 class PreviewLabel(QLabel):
-    """可点击的预览图，点击或悬停时弹出大图。"""
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self._full_pixmap: Optional[QPixmap] = None
-        self._tooltip_dialog: Optional[QDialog] = None
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def set_full_pixmap(self, pix: Optional[QPixmap]):
         self._full_pixmap = pix
-        self.setCursor(
-            Qt.CursorShape.PointingHandCursor if pix else Qt.CursorShape.ArrowCursor
-        )
 
-    def mousePressEvent(self, event):
-        if self._full_pixmap and not self._full_pixmap.isNull():
-            self._show_large(event.globalPosition().toPoint())
-
-    def enterEvent(self, event):
-        if self._full_pixmap and not self._full_pixmap.isNull():
-            self._show_large(QCursor.pos())
-
-    def leaveEvent(self, event):
-        self._close_tooltip()
-
-    def _show_large(self, global_pos):
-        if self._tooltip_dialog:
+    def show_large(self):
+        if not self._full_pixmap or self._full_pixmap.isNull():
             return
-        screen = QApplication.screenAt(global_pos)
-        if screen is None:
-            screen = QApplication.primaryScreen()
+        screen = QApplication.primaryScreen()
         screen_rect = screen.availableGeometry()
-        max_w = int(screen_rect.width() * 0.7)
-        max_h = int(screen_rect.height() * 0.8)
+        max_w = int(screen_rect.width() * 0.8)
+        max_h = int(screen_rect.height() * 0.85)
 
         scaled = self._full_pixmap.scaled(
             max_w, max_h,
@@ -57,31 +37,15 @@ class PreviewLabel(QLabel):
         )
 
         dlg = QDialog(self.window())
-        dlg.setWindowFlags(
-            Qt.WindowType.ToolTip |
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint
-        )
-        dlg.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        lbl = QLabel(dlg)
+        dlg.setWindowTitle("发票预览")
+        dlg_layout = QVBoxLayout(dlg)
+        dlg_layout.setContentsMargins(0, 0, 0, 0)
+        lbl = QLabel()
         lbl.setPixmap(scaled)
-        lbl.setFixedSize(scaled.size())
-        dlg.setFixedSize(scaled.size())
-
-        # 定位：优先在鼠标右侧，防止超出屏幕
-        x = global_pos.x() + 16
-        y = global_pos.y() - scaled.height() // 2
-        if x + scaled.width() > screen_rect.right():
-            x = global_pos.x() - scaled.width() - 16
-        y = max(screen_rect.top(), min(y, screen_rect.bottom() - scaled.height()))
-        dlg.move(x, y)
-        dlg.show()
-        self._tooltip_dialog = dlg
-
-    def _close_tooltip(self):
-        if self._tooltip_dialog:
-            self._tooltip_dialog.close()
-            self._tooltip_dialog = None
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dlg_layout.addWidget(lbl)
+        dlg.resize(scaled.width(), scaled.height())
+        dlg.exec()
 
 
 class DetailPanel(QWidget):
@@ -92,14 +56,32 @@ class DetailPanel(QWidget):
         super().__init__(parent)
         layout = QHBoxLayout(self)
 
-        # 左：预览
+        # 左：预览区
+        left_preview = QWidget()
+        left_layout = QVBoxLayout(left_preview)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(4)
+
         self._preview = PreviewLabel("选择发票查看预览")
         self._preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._preview.setMinimumWidth(200)
         self._preview.setMinimumHeight(200)
         self._preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._preview.setStyleSheet("background: #f0f0f0;")
-        layout.addWidget(self._preview, 1)
+        left_layout.addWidget(self._preview, 1)
+
+        self._zoom_btn = QPushButton("查看大图")
+        self._zoom_btn.setFixedHeight(28)
+        self._zoom_btn.setStyleSheet(
+            "QPushButton { border: 1px solid #BDBDBD; border-radius: 3px; "
+            "background: #fff; color: #333; padding: 0 12px; }"
+            "QPushButton:hover { background: #E3F2FD; color: #1565C0; }"
+        )
+        self._zoom_btn.clicked.connect(self._preview.show_large)
+        self._zoom_btn.hide()
+        left_layout.addWidget(self._zoom_btn, 0, Qt.AlignmentFlag.AlignCenter)
+
+        layout.addWidget(left_preview, 1)
 
         # 右：表单
         right = QWidget()
@@ -204,12 +186,14 @@ class DetailPanel(QWidget):
         # 预览
         self._preview.clear()
         self._preview.set_full_pixmap(None)
+        self._zoom_btn.hide()
         suffix = Path(inv.file_path).suffix.lower()
         if suffix in (".jpg", ".jpeg", ".png"):
             pix = QPixmap(inv.file_path)
             if not pix.isNull():
                 self._preview.set_full_pixmap(pix)
                 self._preview.setPixmap(self._scale_pixmap(pix))
+                self._zoom_btn.show()
             else:
                 self._preview.setText(f"图片加载失败\n{Path(inv.file_path).name}")
         elif suffix == ".pdf":
@@ -311,6 +295,7 @@ class DetailPanel(QWidget):
             if not qpix.isNull():
                 self._preview.set_full_pixmap(qpix)
                 self._preview.setPixmap(self._scale_pixmap(qpix))
+                self._zoom_btn.show()
             else:
                 self._preview.setText(f"PDF渲染失败\n{Path(file_path).name}")
         except Exception as e:
