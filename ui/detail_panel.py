@@ -136,10 +136,7 @@ class DetailPanel(QWidget):
         if suffix in (".jpg", ".jpeg", ".png"):
             pix = QPixmap(inv.file_path)
             if not pix.isNull():
-                self._preview.setPixmap(
-                    pix.scaled(400, 600, Qt.AspectRatioMode.KeepAspectRatio,
-                               Qt.TransformationMode.SmoothTransformation)
-                )
+                self._preview.setPixmap(self._scale_pixmap(pix))
             else:
                 self._preview.setText(f"图片加载失败\n{Path(inv.file_path).name}")
         elif suffix == ".pdf":
@@ -213,21 +210,33 @@ class DetailPanel(QWidget):
             created_at=inv.created_at,
         )
 
+    def _scale_pixmap(self, pix: QPixmap) -> QPixmap:
+        """按 widget 尺寸 + devicePixelRatio 缩放，保证高 DPI 下清晰。"""
+        dpr = self._preview.devicePixelRatio()
+        w = max(self._preview.width(), 300)
+        h = max(self._preview.height(), 400)
+        scaled = pix.scaled(
+            int(w * dpr), int(h * dpr),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        )
+        scaled.setDevicePixelRatio(dpr)
+        return scaled
+
     def _load_pdf_preview(self, file_path: str):
         try:
             doc = fitz.open(file_path)
             page = doc[0]
-            mat = fitz.Matrix(2.0, 2.0)
+            dpr = self._preview.devicePixelRatio()
+            # 渲染分辨率 = 显示尺寸 × DPR × 基础倍数(2x)
+            scale = 2.0 * dpr
+            mat = fitz.Matrix(scale, scale)
             pix = page.get_pixmap(matrix=mat)
             img_bytes = pix.tobytes("png")
             qpix = QPixmap()
             qpix.loadFromData(img_bytes)
             if not qpix.isNull():
-                self._preview.setPixmap(
-                    qpix.scaled(self._preview.width(), self._preview.height(),
-                                Qt.AspectRatioMode.KeepAspectRatio,
-                                Qt.TransformationMode.SmoothTransformation)
-                )
+                self._preview.setPixmap(self._scale_pixmap(qpix))
             else:
                 self._preview.setText(f"PDF渲染失败\n{Path(file_path).name}")
         except Exception as e:

@@ -55,6 +55,11 @@ def show_consent_dialog(db: Database) -> bool:
 
 
 def main():
+    # 开启高 DPI 缩放，Windows 高分屏下文字和图片更清晰
+    from PyQt6.QtCore import Qt as _Qt
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        _Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
     app = QApplication(sys.argv)
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     db = Database(DB_PATH)
