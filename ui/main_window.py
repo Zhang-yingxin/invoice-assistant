@@ -33,11 +33,18 @@ class OCRWorker(QThread):
         self.cancelled = False
 
     def run(self):
+        min_interval = 0.5  # QPS=2，两次请求最小间隔 0.5s
+        last_request_time = 0.0
         for i, fp in enumerate(self.files, 1):
             if self.cancelled:
                 break
             self.progress.emit(i, len(self.files))
+            # 只在上次请求完成不足 0.5s 时才补等，避免无谓等待
+            elapsed = time.time() - last_request_time
+            if elapsed < min_interval:
+                time.sleep(min_interval - elapsed)
             try:
+                last_request_time = time.time()
                 inv = parse_file(fp, self.backend, self.threshold)
                 inv.batch_id = self.batch_id
                 # 跨历史批次重复检测
@@ -46,8 +53,8 @@ class OCRWorker(QThread):
                 self.db.save(inv)
                 self.invoice_ready.emit(inv)
             except Exception as e:
+                last_request_time = time.time()
                 self.ocr_error.emit(str(fp), str(e))
-            time.sleep(0.5)  # QPS=2 限速
         self.done.emit()
 
 
