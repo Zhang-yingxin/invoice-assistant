@@ -7,8 +7,8 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from core.models import Invoice, InvoiceSheet, InvoiceStatus
 
 SPECIAL_NORMAL_HEADERS = [
-    "序号", "发票种类", "发票代码", "发票号码", "开票日期",
-    "货物/服务名称", "销方名称", "购买方名称", "购买方税号",
+    "序号", "发票种类", "发票号码", "开票日期",
+    "货物/服务名称", "销方名称",
     "金额", "税率", "税额", "价税合计",
 ]
 MISC_HEADERS = ["序号", "日期", "货物/服务名称", "价税合计"]
@@ -53,10 +53,9 @@ def export_to_excel(invoices: List[Invoice], output_path: Path):
         row = ws.max_row + 1
         if inv.sheet in (InvoiceSheet.SPECIAL, InvoiceSheet.NORMAL):
             for col, val in enumerate([
-                idx, inv.invoice_type, inv.invoice_code, inv.invoice_number,
-                inv.issue_date, inv.goods_name, inv.seller_name, inv.buyer_name,
-                inv.buyer_tax_id, inv.amount, inv.tax_rate, inv.tax_amount,
-                inv.total_amount,
+                idx, inv.invoice_type, inv.invoice_number,
+                inv.issue_date, inv.goods_name, inv.seller_name,
+                inv.amount, inv.tax_rate, inv.tax_amount, inv.total_amount,
             ], 1):
                 ws.cell(row, col, val)
         else:

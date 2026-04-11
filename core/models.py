@@ -40,3 +40,4 @@ class Invoice:
     low_confidence_fields: List[str] = field(default_factory=list)
     batch_id: Optional[str] = None
     error_message: Optional[str] = None
+    created_at: Optional[str] = None

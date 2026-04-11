@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import List
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QScrollArea, QFrame,
-    QHBoxLayout, QLabel
+    QHBoxLayout, QLabel, QPushButton
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent
@@ -22,7 +22,8 @@ STATUS_COLOR = {
 
 
 class InvoiceCard(QFrame):
-    clicked = pyqtSignal(str)  # file_path
+    clicked = pyqtSignal(str)   # file_path
+    delete_requested = pyqtSignal(str)  # file_path
 
     def __init__(self, inv: Invoice, parent=None):
         super().__init__(parent)
@@ -31,9 +32,21 @@ class InvoiceCard(QFrame):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         layout = QHBoxLayout(self)
+        layout.setContentsMargins(6, 4, 6, 4)
+
+        # 左侧：文件名 + 识别时间
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(2)
         name = QLabel(inv.file_path.split("/")[-1])
         name.setWordWrap(True)
-        layout.addWidget(name, 1)
+        left_layout.addWidget(name)
+        if inv.created_at:
+            time_label = QLabel(inv.created_at)
+            time_label.setStyleSheet("color: #999; font-size: 11px;")
+            left_layout.addWidget(time_label)
+        layout.addWidget(left, 1)
 
         status_label = QLabel(inv.status.value)
         color = STATUS_COLOR.get(inv.status, "#888")
@@ -56,12 +69,24 @@ class InvoiceCard(QFrame):
             warn.setToolTip(inv.error_message.replace("DUPLICATE:", "").strip())
             layout.addWidget(warn)
 
+        # 删除按钮
+        del_btn = QPushButton("×")
+        del_btn.setFixedSize(22, 22)
+        del_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #aaa; font-size: 16px; border: none; }"
+            "QPushButton:hover { color: #e53935; }"
+        )
+        del_btn.setToolTip("删除此发票记录")
+        del_btn.clicked.connect(lambda: self.delete_requested.emit(self.file_path))
+        layout.addWidget(del_btn)
+
     def mousePressEvent(self, event):
         self.clicked.emit(self.file_path)
 
 
 class InvoiceList(QWidget):
     invoice_selected = pyqtSignal(str)   # file_path
+    invoice_delete = pyqtSignal(str)     # file_path
     files_dropped = pyqtSignal(list)     # list[Path]
 
     def __init__(self, parent=None):
@@ -104,6 +129,7 @@ class InvoiceList(QWidget):
         for inv in invoices:
             card = InvoiceCard(inv)
             card.clicked.connect(self.invoice_selected)
+            card.delete_requested.connect(self.invoice_delete)
             self._layout.addWidget(card)
             self._cards[inv.file_path] = card
 

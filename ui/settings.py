@@ -1,12 +1,9 @@
-import keyring
 from PyQt6.QtWidgets import (
     QWidget, QFormLayout, QLineEdit, QPushButton,
     QDoubleSpinBox, QFileDialog, QMessageBox, QVBoxLayout
 )
 from PyQt6.QtCore import pyqtSignal
 from store.db import Database
-
-SERVICE_NAME = "invoice-assistant"
 
 
 class SettingsPage(QWidget):
@@ -50,10 +47,8 @@ class SettingsPage(QWidget):
         self._load()
 
     def _load(self):
-        ak = keyring.get_password(SERVICE_NAME, "api_key") or ""
-        sk = keyring.get_password(SERVICE_NAME, "secret_key") or ""
-        self._ak.setText(ak)
-        self._sk.setText(sk)
+        self._ak.setText(self._db.get_setting("api_key", ""))
+        self._sk.setText(self._db.get_setting("secret_key", ""))
         self._threshold.setValue(float(self._db.get_setting("confidence_threshold", "0.9")))
         self._export_path.setText(self._db.get_setting("export_path", ""))
 
@@ -63,8 +58,8 @@ class SettingsPage(QWidget):
             self._export_path.setText(path)
 
     def _save(self):
-        keyring.set_password(SERVICE_NAME, "api_key", self._ak.text().strip())
-        keyring.set_password(SERVICE_NAME, "secret_key", self._sk.text().strip())
+        self._db.set_setting("api_key", self._ak.text().strip())
+        self._db.set_setting("secret_key", self._sk.text().strip())
         self._db.set_setting("confidence_threshold", str(self._threshold.value()))
         self._db.set_setting("export_path", self._export_path.text().strip())
         QMessageBox.information(self, "设置", "保存成功")

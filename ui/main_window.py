@@ -1,4 +1,5 @@
 import time
+import uuid
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
@@ -13,9 +14,6 @@ from store.db import Database
 from core.models import Invoice, InvoiceStatus, InvoiceSheet
 from core.parser import parse_file
 from core.ocr_backend import BaiduOCRBackend
-import keyring
-
-SERVICE_NAME = "invoice-assistant"
 
 
 class OCRWorker(QThread):
@@ -24,12 +22,13 @@ class OCRWorker(QThread):
     ocr_error = pyqtSignal(str, str)   # file_path, error_msg
     done = pyqtSignal()
 
-    def __init__(self, files, backend, db, threshold):
+    def __init__(self, files, backend, db, threshold, batch_id: str = ""):
         super().__init__()
         self.files = files
         self.backend = backend
         self.db = db
         self.threshold = threshold
+        self.batch_id = batch_id
         self.cancelled = False
 
     def run(self):
@@ -39,6 +38,7 @@ class OCRWorker(QThread):
             self.progress.emit(i, len(self.files))
             try:
                 inv = parse_file(fp, self.backend, self.threshold)
+                inv.batch_id = self.batch_id
                 # 跨历史批次重复检测
                 if inv.invoice_number and self.db.is_duplicate(inv.invoice_number, inv.issue_date):
                     inv.error_message = f"DUPLICATE:该发票曾于历史批次处理过"
@@ -56,7 +56,8 @@ class MainWindow(QMainWindow):
         self._db = db
         self._worker = None
         self._ocr_errors = []
-        self.setWindowTitle("发票识别登记助手")
+        self._current_batch_id: str = ""
+        self.setWindowTitle("发票识别助手")
         self.resize(1200, 800)
 
         central = QWidget()
@@ -115,6 +116,7 @@ class MainWindow(QMainWindow):
         self._inv_list = InvoiceList()
         self._inv_list.invoice_selected.connect(self._on_invoice_selected)
         self._inv_list.files_dropped.connect(self._start_ocr)
+        self._inv_list.invoice_delete.connect(self._on_delete_invoice)
         inv_layout.addWidget(self._inv_list, 1)
         self._detail = DetailPanel()
         self._detail.confirmed.connect(self._on_confirm_invoice)
@@ -132,8 +134,8 @@ class MainWindow(QMainWindow):
         self._refresh()
 
     def _get_backend(self):
-        ak = keyring.get_password(SERVICE_NAME, "api_key") or ""
-        sk = keyring.get_password(SERVICE_NAME, "secret_key") or ""
+        ak = self._db.get_setting("api_key", "")
+        sk = self._db.get_setting("secret_key", "")
         return BaiduOCRBackend(ak, sk)
 
     def _refresh(self):
@@ -197,7 +199,8 @@ class MainWindow(QMainWindow):
         threshold = float(self._db.get_setting("confidence_threshold", "0.9"))
         backend = self._get_backend()
         self._ocr_errors = []
-        self._worker = OCRWorker(to_process, backend, self._db, threshold)
+        self._current_batch_id = str(uuid.uuid4())
+        self._worker = OCRWorker(to_process, backend, self._db, threshold, self._current_batch_id)
         self._worker.progress.connect(lambda c, t: self._progress.show_processing(c, t))
         self._worker.invoice_ready.connect(lambda inv: self._refresh())
         self._worker.ocr_error.connect(self._on_ocr_error)
@@ -273,11 +276,16 @@ class MainWindow(QMainWindow):
                 self._db.update_status(inv.file_path, InvoiceStatus.CONFIRMED)
             self._refresh()
 
+    def _on_delete_invoice(self, file_path: str):
+        from store.db import InvoiceRecord
+        InvoiceRecord.delete().where(InvoiceRecord.file_path == file_path).execute()
+        self._refresh()
+
     def _on_export(self):
         from ui.export_summary import ExportSummaryDialog
         invoices = self._db.get_all()
         default_path = self._db.get_setting("export_path", "")
-        dlg = ExportSummaryDialog(invoices, default_path, self)
+        dlg = ExportSummaryDialog(invoices, default_path, self._current_batch_id, self)
         dlg.exec()
 
     def _clear_all(self):

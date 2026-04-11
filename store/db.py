@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
@@ -33,6 +34,7 @@ class InvoiceRecord(Model):
     low_confidence_fields = TextField(default="[]")
     batch_id = CharField(null=True)
     error_message = TextField(null=True)
+    created_at = CharField(null=True)
 
     class Meta:
         database = _db
@@ -115,6 +117,7 @@ class Database:
             "low_confidence_fields": json.dumps(inv.low_confidence_fields),
             "batch_id": inv.batch_id,
             "error_message": inv.error_message,
+            "created_at": inv.created_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
     @staticmethod
@@ -139,4 +142,5 @@ class Database:
             low_confidence_fields=json.loads(r.low_confidence_fields),
             batch_id=r.batch_id,
             error_message=r.error_message,
+            created_at=r.created_at,
         )

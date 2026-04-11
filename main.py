@@ -7,6 +7,29 @@ from ui.main_window import MainWindow
 DB_PATH = Path.home() / ".invoice_assistant" / "data.db"
 
 
+def _migrate_keyring_to_db(db: Database):
+    """将旧版 keyring 中的 AK/SK 迁移到 db，迁移后删除 keyring 条目，只执行一次。"""
+    if db.get_setting("keyring_migrated") == "1":
+        return
+    try:
+        import keyring
+        ak = keyring.get_password("invoice-assistant", "api_key") or ""
+        sk = keyring.get_password("invoice-assistant", "secret_key") or ""
+        if ak:
+            db.set_setting("api_key", ak)
+        if sk:
+            db.set_setting("secret_key", sk)
+        # 删除 keyring 条目，避免以后再触发系统弹窗
+        try:
+            keyring.delete_password("invoice-assistant", "api_key")
+            keyring.delete_password("invoice-assistant", "secret_key")
+        except Exception:
+            pass
+    except Exception:
+        pass
+    db.set_setting("keyring_migrated", "1")
+
+
 def show_consent_dialog(db: Database) -> bool:
     """返回 True 表示用户同意，False 表示拒绝。首次启动弹出，同意后不再重复。"""
     if db.get_setting("consent_given") == "1":
@@ -35,6 +58,8 @@ def main():
     app = QApplication(sys.argv)
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     db = Database(DB_PATH)
+
+    _migrate_keyring_to_db(db)
 
     if not show_consent_dialog(db):
         sys.exit(0)
