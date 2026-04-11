@@ -11,7 +11,17 @@ def map_baidu_response(file_path: str, response: dict, confidence_threshold: flo
     wr = response.get("words_result", {})
 
     def get(key: str) -> str:
-        return wr.get(key, {}).get("words", "") or ""
+        """百度 /vat_invoice 接口直接返回字符串字段，不是 {words: ...} 嵌套结构。"""
+        val = wr.get(key, "")
+        if isinstance(val, str):
+            return val
+        if isinstance(val, list) and val:
+            # 列表型字段（如 CommodityName）取第一行
+            first = val[0]
+            if isinstance(first, dict):
+                return first.get("word", "")
+            return str(first)
+        return ""
 
     def get_float(key: str) -> float:
         try:
@@ -21,6 +31,9 @@ def map_baidu_response(file_path: str, response: dict, confidence_threshold: flo
 
     invoice_type = get("InvoiceType")
     invoice_code = get("InvoiceCode")
+    # 税率从 CommodityTaxRate 列表取第一行
+    tax_rate_raw = wr.get("CommodityTaxRate", [])
+    tax_rate = tax_rate_raw[0].get("word", "") if tax_rate_raw else ""
 
     return Invoice(
         file_path=file_path,
@@ -35,8 +48,8 @@ def map_baidu_response(file_path: str, response: dict, confidence_threshold: flo
         buyer_name=get("PurchaserName"),
         buyer_tax_id=get("PurchaserRegisterNum"),
         amount=get_float("TotalAmount"),
-        tax_rate=get("TaxRate"),
-        tax_amount=get_float("TaxAmount"),
+        tax_rate=tax_rate,
+        tax_amount=get_float("TotalTax"),
         total_amount=get_float("AmountInFiguers"),
         confidence={},
         low_confidence_fields=[],

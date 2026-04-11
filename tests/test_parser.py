@@ -6,18 +6,18 @@ from core.ocr_backend import BaiduOCRBackend
 
 BAIDU_RESPONSE = {
     "words_result": {
-        "InvoiceType": {"words": "增值税普通发票"},
-        "InvoiceCode": {"words": "044031900111"},
-        "InvoiceNum": {"words": "87654321"},
-        "InvoiceDate": {"words": "2024年02月01日"},
-        "CommodityName": {"words": "交通费"},
-        "SellerName": {"words": "滴滴出行"},
-        "PurchaserName": {"words": "某公司"},
-        "PurchaserRegisterNum": {"words": ""},
-        "TotalAmount": {"words": "50.00"},
-        "TaxRate": {"words": "免税"},
-        "TaxAmount": {"words": "0.00"},
-        "AmountInFiguers": {"words": "50.00"},
+        "InvoiceType": "增值税普通发票",
+        "InvoiceCode": "044031900111",
+        "InvoiceNum": "87654321",
+        "InvoiceDate": "2024年02月01日",
+        "CommodityName": [{"row": "1", "word": "交通费"}],
+        "SellerName": "滴滴出行",
+        "PurchaserName": "某公司",
+        "PurchaserRegisterNum": "",
+        "TotalAmount": "50.00",
+        "CommodityTaxRate": [{"row": "1", "word": "免税"}],
+        "TotalTax": "0.00",
+        "AmountInFiguers": "50.00",
     }
 }
 
