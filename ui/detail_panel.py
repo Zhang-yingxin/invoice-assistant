@@ -32,11 +32,14 @@ class DetailPanel(QWidget):
 
         # 右：表单
         right = QWidget()
+        right.setMinimumWidth(320)
         right_layout = QVBoxLayout(right)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         form_widget = QWidget()
         self._form = QFormLayout(form_widget)
+        self._form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self._form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         scroll.setWidget(form_widget)
         right_layout.addWidget(scroll)
 

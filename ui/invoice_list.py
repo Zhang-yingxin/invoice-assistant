@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import List
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QScrollArea, QFrame,
-    QHBoxLayout, QLabel, QPushButton, QCheckBox
+    QHBoxLayout, QLabel, QPushButton, QCheckBox, QSizePolicy
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent
@@ -48,7 +48,8 @@ class InvoiceCard(QFrame):
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(2)
-        name = QLabel(inv.file_path.split("/")[-1])
+        filename = inv.file_path.split("/")[-1]
+        name = QLabel(filename)
         name.setWordWrap(True)
         left_layout.addWidget(name)
         if inv.created_at:
