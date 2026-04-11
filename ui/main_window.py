@@ -55,6 +55,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._db = db
         self._worker = None
+        self._ocr_errors = []
         self.setWindowTitle("发票识别登记助手")
         self.resize(1200, 800)
 
@@ -188,6 +189,7 @@ class MainWindow(QMainWindow):
 
         threshold = float(self._db.get_setting("confidence_threshold", "0.9"))
         backend = self._get_backend()
+        self._ocr_errors = []
         self._worker = OCRWorker(to_process, backend, self._db, threshold)
         self._worker.progress.connect(lambda c, t: self._progress.show_processing(c, t))
         self._worker.invoice_ready.connect(lambda inv: self._refresh())
@@ -205,11 +207,20 @@ class MainWindow(QMainWindow):
             tax_amount=0, total_amount=0, error_message=msg,
         )
         self._db.save(inv)
+        self._ocr_errors.append((file_path, msg))
         self._refresh()
 
     def _on_ocr_done(self):
         self._progress.hide_processing()
         self._refresh()
+        if self._ocr_errors:
+            lines = "\n".join(
+                f"• {Path(fp).name}：{err}" for fp, err in self._ocr_errors
+            )
+            QMessageBox.warning(
+                self, "部分发票识别失败",
+                f"以下 {len(self._ocr_errors)} 张发票识别失败，请检查文件或 OCR 配置：\n\n{lines}"
+            )
 
     def _on_cancel(self):
         if self._worker:

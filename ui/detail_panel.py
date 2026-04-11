@@ -1,9 +1,10 @@
 from pathlib import Path
 from typing import Optional
+import fitz  # pymupdf
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QLineEdit, QDoubleSpinBox, QComboBox, QPushButton,
-    QFormLayout, QScrollArea
+    QFormLayout, QScrollArea, QSizePolicy
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QPixmap
@@ -24,6 +25,8 @@ class DetailPanel(QWidget):
         self._preview = QLabel("选择发票查看预览")
         self._preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._preview.setMinimumWidth(400)
+        self._preview.setMinimumHeight(400)
+        self._preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._preview.setStyleSheet("background: #f0f0f0;")
         layout.addWidget(self._preview, 1)
 
@@ -111,6 +114,7 @@ class DetailPanel(QWidget):
         self._manual_btn.setVisible(inv.status == InvoiceStatus.FAILED)
 
         # 预览
+        self._preview.clear()
         suffix = Path(inv.file_path).suffix.lower()
         if suffix in (".jpg", ".jpeg", ".png"):
             pix = QPixmap(inv.file_path)
@@ -128,7 +132,6 @@ class DetailPanel(QWidget):
 
     def _load_pdf_preview(self, file_path: str):
         try:
-            import fitz
             doc = fitz.open(file_path)
             page = doc[0]
             mat = fitz.Matrix(2.0, 2.0)  # 2x 缩放，清晰度够用
@@ -138,7 +141,8 @@ class DetailPanel(QWidget):
             qpix.loadFromData(img_bytes)
             if not qpix.isNull():
                 self._preview.setPixmap(
-                    qpix.scaled(400, 600, Qt.AspectRatioMode.KeepAspectRatio,
+                    qpix.scaled(self._preview.width(), self._preview.height(),
+                                Qt.AspectRatioMode.KeepAspectRatio,
                                 Qt.TransformationMode.SmoothTransformation)
                 )
             else:

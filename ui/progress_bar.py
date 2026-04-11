@@ -17,6 +17,7 @@ class ProgressSummary(QWidget):
 
         self._bulk_btn = QPushButton("批量确认")
         self._bulk_btn.setEnabled(False)
+        self._bulk_btn.setToolTip("当前没有可批量确认的发票（需先成功识别发票）")
         self._bulk_btn.clicked.connect(self.bulk_confirm_clicked)
         layout.addWidget(self._bulk_btn)
 
@@ -32,6 +33,10 @@ class ProgressSummary(QWidget):
             f"|  识别失败 {failed}  |  总金额 ¥{total_amount:,.2f}"
         )
         self._bulk_btn.setEnabled(has_ocr_done)
+        if has_ocr_done:
+            self._bulk_btn.setToolTip("")
+        else:
+            self._bulk_btn.setToolTip("当前没有可批量确认的发票（需先成功识别发票）")
 
     def show_processing(self, current: int, total: int):
         self._summary.setText(f"正在识别 第 {current} 张 / 共 {total} 张")
