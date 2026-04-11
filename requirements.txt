@@ -1,0 +1,10 @@
+PyQt6>=6.6
+pdfplumber>=0.10
+pymupdf>=1.23
+openpyxl>=3.1
+peewee>=3.17
+keyring>=24
+qtawesome>=1.3
+requests>=2.31
+pytest>=8
+pytest-qt>=4.4
