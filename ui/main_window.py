@@ -1,5 +1,6 @@
 import time
 import uuid
+import threading
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
@@ -33,28 +34,51 @@ class OCRWorker(QThread):
         self.cancelled = False
 
     def run(self):
-        min_interval = 0.5  # QPS=2，两次请求最小间隔 0.5s
-        last_request_time = 0.0
-        for i, fp in enumerate(self.files, 1):
+        # 并发3个线程，每个线程间隔 0.5s 发请求，整体 QPS≈6，不超百度限制
+        CONCURRENCY = 3
+        MIN_INTERVAL = 0.5  # 每个线程最小间隔
+        semaphore = threading.Semaphore(CONCURRENCY)
+        rate_lock = threading.Lock()
+        last_request_time = [0.0]
+        completed = [0]
+        total = len(self.files)
+
+        def process_one(fp):
+            if self.cancelled:
+                return
+            with semaphore:
+                # 限速：同一时刻只允许每 0.5/CONCURRENCY 秒发一个新请求
+                with rate_lock:
+                    elapsed = time.time() - last_request_time[0]
+                    wait = MIN_INTERVAL / CONCURRENCY - elapsed
+                    if wait > 0:
+                        time.sleep(wait)
+                    last_request_time[0] = time.time()
+                try:
+                    inv = parse_file(fp, self.backend, self.threshold)
+                    inv.batch_id = self.batch_id
+                    if inv.invoice_number and self.db.is_duplicate(inv.invoice_number, inv.issue_date):
+                        inv.error_message = "DUPLICATE:该发票曾于历史批次处理过"
+                    self.db.save(inv)
+                    self.invoice_ready.emit(inv)
+                except Exception as e:
+                    self.ocr_error.emit(str(fp), str(e))
+                finally:
+                    with rate_lock:
+                        completed[0] += 1
+                    self.progress.emit(completed[0], total)
+
+        threads = []
+        for fp in self.files:
             if self.cancelled:
                 break
-            self.progress.emit(i, len(self.files))
-            # 只在上次请求完成不足 0.5s 时才补等，避免无谓等待
-            elapsed = time.time() - last_request_time
-            if elapsed < min_interval:
-                time.sleep(min_interval - elapsed)
-            try:
-                last_request_time = time.time()
-                inv = parse_file(fp, self.backend, self.threshold)
-                inv.batch_id = self.batch_id
-                # 跨历史批次重复检测
-                if inv.invoice_number and self.db.is_duplicate(inv.invoice_number, inv.issue_date):
-                    inv.error_message = f"DUPLICATE:该发票曾于历史批次处理过"
-                self.db.save(inv)
-                self.invoice_ready.emit(inv)
-            except Exception as e:
-                last_request_time = time.time()
-                self.ocr_error.emit(str(fp), str(e))
+            t = threading.Thread(target=process_one, args=(fp,), daemon=True)
+            threads.append(t)
+            t.start()
+
+        for t in threads:
+            t.join()
+
         self.done.emit()
 
 
@@ -136,6 +160,11 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(6)
+        splitter.setStyleSheet(
+            "QSplitter::handle { background: #E0E0E0; }"
+            "QSplitter::handle:hover { background: #1E5BA8; }"
+        )
 
         self._inv_list = InvoiceList()
         self._inv_list.invoice_selected.connect(self._on_invoice_selected)
