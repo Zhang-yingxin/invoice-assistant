@@ -47,7 +47,7 @@ class BaiduOCRBackend(OCRBackend):
         except Exception as e:
             raise OCRError(error_type="AUTH_ERROR", message=str(e))
 
-    def recognize(self, image_bytes: bytes) -> dict:
+    def recognize(self, image_bytes: bytes, _retry: int = 3) -> dict:
         try:
             token = self._get_access_token()
         except OCRError:
@@ -75,7 +75,11 @@ class BaiduOCRBackend(OCRBackend):
             if code in (110, 111):
                 raise OCRError(error_type="AUTH_ERROR", message=result.get("error_msg", ""))
             if code == 18:
-                raise OCRError(error_type="RATE_LIMIT", message="QPS超限")
+                # QPS 超限：退避重试，最多 _retry 次
+                if _retry > 0:
+                    time.sleep(1.0)
+                    return self.recognize(image_bytes, _retry=_retry - 1)
+                raise OCRError(error_type="RATE_LIMIT", message="QPS超限，已重试3次仍失败")
             raise OCRError(error_type="PARSE_ERROR", message=result.get("error_msg", ""))
 
         return result
