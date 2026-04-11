@@ -36,17 +36,15 @@ class ExportSummaryDialog(QDialog):
             self._rb_all.setChecked(True)
             self._rb_batch.setEnabled(False)
 
+        # 包含未确认选项（必须在 _update_stats 之前创建）
+        self._include_unconfirmed = QCheckBox("包含未确认发票")
+        layout.addWidget(self._include_unconfirmed)
+
         # 统计预览（动态刷新）
         self._stats_label = QLabel()
         layout.addWidget(self._stats_label)
-        self._scope_group.idClicked.connect(self._update_stats)
-        self._update_stats()
 
-        # 包含未确认选项
-        self._include_unconfirmed = QCheckBox("包含未确认发票")
-        self._include_unconfirmed.stateChanged.connect(self._update_stats)
-        layout.addWidget(self._include_unconfirmed)
-
+        # 按钮（必须在 _update_stats 之前创建，因为 _update_stats 会调用 setEnabled）
         btn_layout = QHBoxLayout()
         cancel_btn = QPushButton("取消")
         cancel_btn.clicked.connect(self.reject)
@@ -55,6 +53,11 @@ class ExportSummaryDialog(QDialog):
         btn_layout.addWidget(cancel_btn)
         btn_layout.addWidget(self._export_btn)
         layout.addLayout(btn_layout)
+
+        # 连接信号并初始化统计（所有控件已创建完毕）
+        self._scope_group.idClicked.connect(self._update_stats)
+        self._include_unconfirmed.stateChanged.connect(self._update_stats)
+        self._update_stats()
 
     def _get_scope_invoices(self) -> List[Invoice]:
         if self._rb_batch.isChecked() and self._current_batch_id:
