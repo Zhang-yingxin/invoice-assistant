@@ -4,13 +4,84 @@ import fitz  # pymupdf
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QLineEdit, QDoubleSpinBox, QComboBox, QPushButton,
-    QFormLayout, QScrollArea, QSizePolicy, QMessageBox
+    QFormLayout, QScrollArea, QSizePolicy, QMessageBox,
+    QDialog, QApplication
 )
 from PyQt6.QtCore import pyqtSignal, Qt
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QPixmap, QCursor
 from core.models import Invoice, InvoiceSheet, InvoiceStatus
 
 SHEET_OPTIONS = [s.value for s in InvoiceSheet]
+
+
+class PreviewLabel(QLabel):
+    """可点击的预览图，点击或悬停时弹出大图。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._full_pixmap: Optional[QPixmap] = None
+        self._tooltip_dialog: Optional[QDialog] = None
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def set_full_pixmap(self, pix: Optional[QPixmap]):
+        self._full_pixmap = pix
+        self.setCursor(
+            Qt.CursorShape.PointingHandCursor if pix else Qt.CursorShape.ArrowCursor
+        )
+
+    def mousePressEvent(self, event):
+        if self._full_pixmap and not self._full_pixmap.isNull():
+            self._show_large(event.globalPosition().toPoint())
+
+    def enterEvent(self, event):
+        if self._full_pixmap and not self._full_pixmap.isNull():
+            self._show_large(QCursor.pos())
+
+    def leaveEvent(self, event):
+        self._close_tooltip()
+
+    def _show_large(self, global_pos):
+        if self._tooltip_dialog:
+            return
+        screen = QApplication.screenAt(global_pos)
+        if screen is None:
+            screen = QApplication.primaryScreen()
+        screen_rect = screen.availableGeometry()
+        max_w = int(screen_rect.width() * 0.7)
+        max_h = int(screen_rect.height() * 0.8)
+
+        scaled = self._full_pixmap.scaled(
+            max_w, max_h,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        )
+
+        dlg = QDialog(self.window())
+        dlg.setWindowFlags(
+            Qt.WindowType.ToolTip |
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint
+        )
+        dlg.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        lbl = QLabel(dlg)
+        lbl.setPixmap(scaled)
+        lbl.setFixedSize(scaled.size())
+        dlg.setFixedSize(scaled.size())
+
+        # 定位：优先在鼠标右侧，防止超出屏幕
+        x = global_pos.x() + 16
+        y = global_pos.y() - scaled.height() // 2
+        if x + scaled.width() > screen_rect.right():
+            x = global_pos.x() - scaled.width() - 16
+        y = max(screen_rect.top(), min(y, screen_rect.bottom() - scaled.height()))
+        dlg.move(x, y)
+        dlg.show()
+        self._tooltip_dialog = dlg
+
+    def _close_tooltip(self):
+        if self._tooltip_dialog:
+            self._tooltip_dialog.close()
+            self._tooltip_dialog = None
 
 
 class DetailPanel(QWidget):
@@ -22,7 +93,7 @@ class DetailPanel(QWidget):
         layout = QHBoxLayout(self)
 
         # 左：预览
-        self._preview = QLabel("选择发票查看预览")
+        self._preview = PreviewLabel("选择发票查看预览")
         self._preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._preview.setMinimumWidth(200)
         self._preview.setMinimumHeight(200)
@@ -132,10 +203,12 @@ class DetailPanel(QWidget):
 
         # 预览
         self._preview.clear()
+        self._preview.set_full_pixmap(None)
         suffix = Path(inv.file_path).suffix.lower()
         if suffix in (".jpg", ".jpeg", ".png"):
             pix = QPixmap(inv.file_path)
             if not pix.isNull():
+                self._preview.set_full_pixmap(pix)
                 self._preview.setPixmap(self._scale_pixmap(pix))
             else:
                 self._preview.setText(f"图片加载失败\n{Path(inv.file_path).name}")
@@ -236,6 +309,7 @@ class DetailPanel(QWidget):
             qpix = QPixmap()
             qpix.loadFromData(img_bytes)
             if not qpix.isNull():
+                self._preview.set_full_pixmap(qpix)
                 self._preview.setPixmap(self._scale_pixmap(qpix))
             else:
                 self._preview.setText(f"PDF渲染失败\n{Path(file_path).name}")

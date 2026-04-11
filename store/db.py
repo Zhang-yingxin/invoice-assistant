@@ -86,7 +86,7 @@ class Database:
         ).execute()
 
     def get_all(self) -> List[Invoice]:
-        return [self._to_invoice(r) for r in InvoiceRecord.select()]
+        return [self._to_invoice(r) for r in InvoiceRecord.select().order_by(InvoiceRecord.id.desc())]
 
     def is_duplicate(self, invoice_number: str, issue_date: str) -> bool:
         return InvoiceRecord.select().where(
