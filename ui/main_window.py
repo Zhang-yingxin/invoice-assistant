@@ -4,10 +4,9 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QPushButton, QFileDialog, QMessageBox, QStackedWidget, QLabel,
-    QGraphicsView, QGraphicsScene, QGraphicsProxyWidget
+    QSplitter
 )
-from PyQt6.QtCore import QThread, pyqtSignal, QRectF, Qt
-from PyQt6.QtGui import QResizeEvent
+from PyQt6.QtCore import QThread, pyqtSignal, Qt
 from ui.sidebar import Sidebar
 from ui.invoice_list import InvoiceList
 from ui.detail_panel import DetailPanel
@@ -16,8 +15,6 @@ from store.db import Database
 from core.models import Invoice, InvoiceStatus, InvoiceSheet
 from core.parser import parse_file
 from core.ocr_backend import BaiduOCRBackend
-
-DESIGN_W, DESIGN_H = 1200, 800  # 设计基准尺寸
 
 
 class OCRWorker(QThread):
@@ -62,26 +59,11 @@ class MainWindow(QMainWindow):
         self._ocr_errors = []
         self._current_batch_id: str = ""
         self.setWindowTitle("发票识别助手")
-        self.resize(DESIGN_W, DESIGN_H)
-        self.setMinimumSize(600, 400)
+        self.resize(1200, 800)
+        self.setMinimumSize(800, 500)
 
-        # 用 QGraphicsView 包裹整个 UI，实现等比例缩放
-        self._scene = QGraphicsScene(self)
-        self._view = QGraphicsView(self._scene, self)
-        self._view.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        self._view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._view.setFrameShape(QGraphicsView.Shape.NoFrame)
-        self._view.setRenderHint(self._view.renderHints())
-        self.setCentralWidget(self._view)
-
-        # 实际 UI 放在固定大小的容器里
-        self._ui_root = QWidget()
-        self._ui_root.setFixedSize(DESIGN_W, DESIGN_H)
-        self._proxy = self._scene.addWidget(self._ui_root)
-        self._scene.setSceneRect(QRectF(0, 0, DESIGN_W, DESIGN_H))
-
-        central = self._ui_root
+        central = QWidget()
+        self.setCentralWidget(central)
         h_layout = QHBoxLayout(central)
         h_layout.setContentsMargins(0, 0, 0, 0)
         h_layout.setSpacing(0)
@@ -133,16 +115,29 @@ class MainWindow(QMainWindow):
         inv_page = QWidget()
         inv_layout = QHBoxLayout(inv_page)
         inv_layout.setContentsMargins(0, 0, 0, 0)
+        inv_layout.setSpacing(0)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setChildrenCollapsible(False)
+
         self._inv_list = InvoiceList()
         self._inv_list.invoice_selected.connect(self._on_invoice_selected)
         self._inv_list.files_dropped.connect(self._start_ocr)
         self._inv_list.invoice_delete.connect(self._on_delete_invoice)
         self._inv_list.invoices_delete_batch.connect(self._on_delete_batch)
-        inv_layout.addWidget(self._inv_list, 1)
+        self._inv_list.setMinimumWidth(260)
+        splitter.addWidget(self._inv_list)
+
         self._detail = DetailPanel()
         self._detail.confirmed.connect(self._on_confirm_invoice)
         self._detail.manual_requested.connect(self._on_manual_requested)
-        inv_layout.addWidget(self._detail, 1)
+        self._detail.setMinimumWidth(400)
+        splitter.addWidget(self._detail)
+
+        splitter.setStretchFactor(0, 2)
+        splitter.setStretchFactor(1, 3)
+
+        inv_layout.addWidget(splitter)
         self._stack.addWidget(inv_page)      # index 0
 
         # 设置页占位（Task 12 实现后替换）
@@ -342,10 +337,3 @@ class MainWindow(QMainWindow):
             InvoiceRecord.delete().execute()
             self._refresh()
 
-    def resizeEvent(self, event: QResizeEvent):
-        super().resizeEvent(event)
-        vw = self._view.width()
-        vh = self._view.height()
-        scale = min(vw / DESIGN_W, vh / DESIGN_H)
-        self._view.resetTransform()
-        self._view.scale(scale, scale)

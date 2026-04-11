@@ -24,8 +24,8 @@ class DetailPanel(QWidget):
         # 左：预览
         self._preview = QLabel("选择发票查看预览")
         self._preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._preview.setMinimumWidth(400)
-        self._preview.setMinimumHeight(400)
+        self._preview.setMinimumWidth(200)
+        self._preview.setMinimumHeight(200)
         self._preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._preview.setStyleSheet("background: #f0f0f0;")
         layout.addWidget(self._preview, 1)
