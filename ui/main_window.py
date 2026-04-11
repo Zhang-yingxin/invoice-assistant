@@ -170,6 +170,7 @@ class MainWindow(QMainWindow):
         v_layout.addWidget(self._stack, 1)
         h_layout.addWidget(right, 1)
 
+        self._current_filter = "pending"  # 当前筛选：pending / done / failed
         self._refresh()
 
     def _get_backend(self):
@@ -179,7 +180,6 @@ class MainWindow(QMainWindow):
 
     def _refresh(self):
         invoices = self._db.get_all()
-        self._inv_list.set_invoices(invoices)
         confirmed = sum(1 for i in invoices if i.status in (
             InvoiceStatus.CONFIRMED, InvoiceStatus.MANUAL_DONE))
         pending = sum(1 for i in invoices if i.status in (
@@ -192,6 +192,19 @@ class MainWindow(QMainWindow):
         self._progress.update_stats(len(invoices), confirmed, pending, failed, total_amount, has_ocr_done)
         self._sidebar.update_counts(pending, confirmed, failed)
 
+        # 按当前筛选条件过滤展示
+        f = self._current_filter
+        if f == "done":
+            filtered = [i for i in invoices if i.status in (
+                InvoiceStatus.CONFIRMED, InvoiceStatus.MANUAL_DONE)]
+        elif f == "failed":
+            filtered = [i for i in invoices if i.status == InvoiceStatus.FAILED]
+        else:  # pending（默认）
+            filtered = [i for i in invoices if i.status in (
+                InvoiceStatus.PENDING, InvoiceStatus.PROCESSING,
+                InvoiceStatus.OCR_DONE, InvoiceStatus.MANUAL_EDITING)]
+        self._inv_list.set_invoices(filtered)
+
     def _on_nav(self, key: str):
         if key == "import":
             self._import_files()
@@ -201,7 +214,9 @@ class MainWindow(QMainWindow):
             self._load_settings_page()
             self._stack.setCurrentIndex(1)
         else:
+            self._current_filter = key  # "pending" / "done" / "failed"
             self._stack.setCurrentIndex(0)
+            self._refresh()
 
     def _load_settings_page(self):
         # 懒加载设置页
