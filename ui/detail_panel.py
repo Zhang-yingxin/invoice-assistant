@@ -4,7 +4,7 @@ import fitz  # pymupdf
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QLineEdit, QDoubleSpinBox, QComboBox, QPushButton,
-    QFormLayout, QScrollArea, QSizePolicy
+    QFormLayout, QScrollArea, QSizePolicy, QMessageBox
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QPixmap
@@ -14,8 +14,8 @@ SHEET_OPTIONS = [s.value for s in InvoiceSheet]
 
 
 class DetailPanel(QWidget):
-    confirmed = pyqtSignal(str)    # file_path
-    manual_requested = pyqtSignal(str)  # file_path（识别失败时请求手动填写）
+    confirmed = pyqtSignal(object)   # Invoice（含编辑后字段）
+    manual_requested = pyqtSignal(str)  # file_path
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -45,14 +45,15 @@ class DetailPanel(QWidget):
 
         self._fields: dict = {}
         self._current_inv: Optional[Invoice] = None
+        self._editing = False  # 是否处于编辑模式
 
         self._sheet_combo = QComboBox()
         self._sheet_combo.addItems(SHEET_OPTIONS)
+        self._sheet_combo.setEnabled(False)
         self._form.addRow("归属Sheet", self._sheet_combo)
 
         for field, label in [
             ("invoice_type", "发票种类"),
-            ("invoice_code", "发票代码"),
             ("invoice_number", "发票号码"),
             ("issue_date", "开票日期"),
             ("goods_name", "货物/服务名称"),
@@ -62,6 +63,7 @@ class DetailPanel(QWidget):
             ("tax_rate", "税率"),
         ]:
             edit = QLineEdit()
+            edit.setReadOnly(True)
             self._form.addRow(label, edit)
             self._fields[field] = edit
 
@@ -73,27 +75,38 @@ class DetailPanel(QWidget):
             spin = QDoubleSpinBox()
             spin.setMaximum(9_999_999.99)
             spin.setDecimals(2)
+            spin.setReadOnly(True)
+            spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
             self._form.addRow(label, spin)
             self._fields[field] = spin
 
+        # 底部按钮区
         btn_layout = QHBoxLayout()
-        self._confirm_btn = QPushButton("确认")
-        self._confirm_btn.clicked.connect(self._on_confirm)
         self._manual_btn = QPushButton("手动填写")
         self._manual_btn.clicked.connect(self._on_manual)
         self._manual_btn.hide()
         btn_layout.addWidget(self._manual_btn)
-        btn_layout.addWidget(self._confirm_btn)
-        right_layout.addLayout(btn_layout)
 
+        self._edit_btn = QPushButton("编辑")
+        self._edit_btn.clicked.connect(self._on_edit)
+        btn_layout.addWidget(self._edit_btn)
+
+        self._confirm_btn = QPushButton("确认")
+        self._confirm_btn.clicked.connect(self._on_confirm)
+        btn_layout.addWidget(self._confirm_btn)
+
+        right_layout.addLayout(btn_layout)
         layout.addWidget(right, 1)
 
     def load_invoice(self, inv: Invoice):
         self._current_inv = inv
+        self._editing = False
+        self._set_editable(False)
+
         self._sheet_combo.setCurrentText(inv.sheet.value)
 
         text_fields = [
-            "invoice_type", "invoice_code", "invoice_number", "issue_date",
+            "invoice_type", "invoice_number", "issue_date",
             "goods_name", "seller_name", "buyer_name", "buyer_tax_id", "tax_rate"
         ]
         for f in text_fields:
@@ -111,9 +124,10 @@ class DetailPanel(QWidget):
                 widget.setStyleSheet("")
                 widget.setToolTip("")
 
-        self._confirm_btn.setEnabled(
-            inv.status in (InvoiceStatus.OCR_DONE, InvoiceStatus.MANUAL_EDITING)
-        )
+        can_confirm = inv.status in (InvoiceStatus.OCR_DONE, InvoiceStatus.MANUAL_EDITING)
+        self._confirm_btn.setEnabled(can_confirm)
+        self._edit_btn.setVisible(can_confirm)
+        self._edit_btn.setText("编辑")
         self._manual_btn.setVisible(inv.status == InvoiceStatus.FAILED)
 
         # 预览
@@ -133,11 +147,77 @@ class DetailPanel(QWidget):
         else:
             self._preview.setText(f"不支持预览\n{Path(inv.file_path).name}")
 
+    def _set_editable(self, editable: bool):
+        self._sheet_combo.setEnabled(editable)
+        for f, widget in self._fields.items():
+            if isinstance(widget, QLineEdit):
+                widget.setReadOnly(not editable)
+            elif isinstance(widget, QDoubleSpinBox):
+                widget.setReadOnly(not editable)
+                widget.setButtonSymbols(
+                    QDoubleSpinBox.ButtonSymbols.UpDownArrows if editable
+                    else QDoubleSpinBox.ButtonSymbols.NoButtons
+                )
+
+    def _on_edit(self):
+        if not self._editing:
+            self._editing = True
+            self._set_editable(True)
+            self._edit_btn.setText("取消编辑")
+        else:
+            # 取消编辑，恢复原始数据
+            self._editing = False
+            self._set_editable(False)
+            self._edit_btn.setText("编辑")
+            if self._current_inv:
+                self.load_invoice(self._current_inv)
+
+    def _on_confirm(self):
+        if not self._current_inv:
+            return
+        if self._editing:
+            # 弹出提醒
+            msg = QMessageBox(self)
+            msg.setWindowTitle("数据已修改")
+            msg.setText("您编辑后的数据与识别数据不一致，确认后将以您编辑的数据为准导出。")
+            cancel_btn = msg.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+            ok_btn = msg.addButton("确认保存", QMessageBox.ButtonRole.AcceptRole)
+            msg.exec()
+            if msg.clickedButton() != ok_btn:
+                return
+        self.confirmed.emit(self._build_invoice())
+
+    def _build_invoice(self) -> Invoice:
+        """从表单当前值构建 Invoice 对象。"""
+        inv = self._current_inv
+        return Invoice(
+            file_path=inv.file_path,
+            status=InvoiceStatus.CONFIRMED,
+            sheet=InvoiceSheet(self._sheet_combo.currentText()),
+            invoice_type=self._fields["invoice_type"].text(),
+            invoice_code=inv.invoice_code,  # 不在表单里，保留原值
+            invoice_number=self._fields["invoice_number"].text(),
+            issue_date=self._fields["issue_date"].text(),
+            goods_name=self._fields["goods_name"].text(),
+            seller_name=self._fields["seller_name"].text(),
+            buyer_name=self._fields["buyer_name"].text(),
+            buyer_tax_id=self._fields["buyer_tax_id"].text(),
+            tax_rate=self._fields["tax_rate"].text(),
+            amount=self._fields["amount"].value(),
+            tax_amount=self._fields["tax_amount"].value(),
+            total_amount=self._fields["total_amount"].value(),
+            confidence=inv.confidence,
+            low_confidence_fields=inv.low_confidence_fields,
+            batch_id=inv.batch_id,
+            error_message=inv.error_message,
+            created_at=inv.created_at,
+        )
+
     def _load_pdf_preview(self, file_path: str):
         try:
             doc = fitz.open(file_path)
             page = doc[0]
-            mat = fitz.Matrix(2.0, 2.0)  # 2x 缩放，清晰度够用
+            mat = fitz.Matrix(2.0, 2.0)
             pix = page.get_pixmap(matrix=mat)
             img_bytes = pix.tobytes("png")
             qpix = QPixmap()
@@ -152,10 +232,6 @@ class DetailPanel(QWidget):
                 self._preview.setText(f"PDF渲染失败\n{Path(file_path).name}")
         except Exception as e:
             self._preview.setText(f"PDF预览失败\n{e}")
-
-    def _on_confirm(self):
-        if self._current_inv:
-            self.confirmed.emit(self._current_inv.file_path)
 
     def _on_manual(self):
         if self._current_inv:

@@ -152,7 +152,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self._inv_list)
 
         self._detail = DetailPanel()
-        self._detail.confirmed.connect(self._on_confirm_invoice)
+        self._detail.confirmed.connect(self._on_confirm_invoice_obj)
         self._detail.manual_requested.connect(self._on_manual_requested)
         self._detail.setMinimumWidth(400)
         splitter.addWidget(self._detail)
@@ -295,8 +295,9 @@ class MainWindow(QMainWindow):
         if inv:
             self._detail.load_invoice(inv)
 
-    def _on_confirm_invoice(self, file_path: str):
-        self._db.update_status(file_path, InvoiceStatus.CONFIRMED)
+    def _on_confirm_invoice_obj(self, inv):
+        # 保存编辑后的所有字段，再更新状态
+        self._db.save(inv)
         self._refresh()
 
     def _on_manual_requested(self, file_path: str):

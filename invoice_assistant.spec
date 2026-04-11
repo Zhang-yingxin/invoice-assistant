@@ -40,6 +40,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
+    icon='assets/ia.ico',
 )
 
 coll = COLLECT(
@@ -57,6 +58,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name='发票识别助手.app',
+    icon='assets/ia.icns',
     bundle_identifier='com.invoice.assistant',
     info_plist={
         'CFBundleName': '发票识别助手',
