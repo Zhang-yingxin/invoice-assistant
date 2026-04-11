@@ -56,6 +56,14 @@ def show_consent_dialog(db: Database) -> bool:
 
 def main():
     app = QApplication(sys.argv)
+    app.setStyleSheet("""
+    QMainWindow, QWidget { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 13px; }
+    QScrollBar:vertical { width: 6px; background: #F5F5F5; border-radius: 3px; }
+    QScrollBar::handle:vertical { background: #CCCCCC; border-radius: 3px; min-height: 20px; }
+    QScrollBar::handle:vertical:hover { background: #AAAAAA; }
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+    QToolTip { background: #333; color: white; border: none; padding: 4px 8px; border-radius: 3px; font-size: 12px; }
+""")
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     db = Database(DB_PATH)
 

@@ -11,13 +11,13 @@ from core.models import Invoice, InvoiceStatus
 SUPPORTED_SUFFIXES = {".pdf", ".jpg", ".jpeg", ".png"}
 
 STATUS_COLOR = {
-    InvoiceStatus.PENDING: "#888888",
-    InvoiceStatus.PROCESSING: "#2196F3",
+    InvoiceStatus.PENDING: "#666666",
+    InvoiceStatus.PROCESSING: "#1E5BA8",
     InvoiceStatus.OCR_DONE: "#FF9800",
-    InvoiceStatus.CONFIRMED: "#4CAF50",
-    InvoiceStatus.FAILED: "#F44336",
+    InvoiceStatus.CONFIRMED: "#388E3C",
+    InvoiceStatus.FAILED: "#D32F2F",
     InvoiceStatus.MANUAL_EDITING: "#9C27B0",
-    InvoiceStatus.MANUAL_DONE: "#4CAF50",
+    InvoiceStatus.MANUAL_DONE: "#388E3C",
 }
 
 
@@ -33,59 +33,79 @@ class InvoiceCard(QFrame):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(6, 4, 6, 4)
+        layout.setContentsMargins(10, 8, 8, 8)
+        layout.setSpacing(8)
+        self.setStyleSheet("""
+            QFrame { background: #FFFFFF; border: 1px solid #E8E8E8; border-radius: 6px; }
+            QFrame:hover { background: #F8F9FF; border-color: #90CAF9; }
+        """)
+        self.setMinimumHeight(56)
 
-        # 复选框
+        # Checkbox
         self._checkbox = QCheckBox()
-        self._checkbox.setFixedWidth(20)
+        self._checkbox.setFixedWidth(18)
         self._checkbox.stateChanged.connect(
             lambda state: self.check_changed.emit(self.file_path, state == 2)
         )
         layout.addWidget(self._checkbox)
 
-        # 左侧：文件名 + 识别时间
-        left = QWidget()
-        left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(2)
-        name = QLabel(inv.file_path.split("/")[-1])
-        name.setWordWrap(True)
-        left_layout.addWidget(name)
+        # Center: filename + time
+        center = QWidget()
+        center.setStyleSheet("border: none; background: transparent;")
+        center_layout = QVBoxLayout(center)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(2)
+
+        filename = inv.file_path.split("/")[-1]
+        name = QLabel(filename)
+        name.setStyleSheet("font-size: 13px; color: #212121; font-weight: 500; border: none;")
+        name.setMaximumWidth(200)
+        name.setToolTip(inv.file_path)
+        # Truncate with ellipsis if too long
+        if len(filename) > 28:
+            name.setText(filename[:25] + "…")
+        center_layout.addWidget(name)
+
         if inv.created_at:
             time_label = QLabel(inv.created_at)
-            time_label.setStyleSheet("color: #999; font-size: 11px;")
-            left_layout.addWidget(time_label)
-        layout.addWidget(left, 1)
+            time_label.setStyleSheet("color: #999; font-size: 11px; border: none;")
+            center_layout.addWidget(time_label)
+        layout.addWidget(center, 1)
 
+        # Status badge
         status_label = QLabel(inv.status.value)
         color = STATUS_COLOR.get(inv.status, "#888")
-        status_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+        status_label.setStyleSheet(
+            f"color: {color}; font-size: 12px; font-weight: bold; border: none;"
+            f"background: transparent;"
+        )
         layout.addWidget(status_label)
 
         if inv.status == InvoiceStatus.MANUAL_DONE:
             tag = QLabel("手动")
             tag.setStyleSheet(
-                "background: #9C27B0; color: white; padding: 2px 6px; border-radius: 3px;"
+                "background: #9C27B0; color: white; padding: 1px 5px;"
+                "border-radius: 3px; font-size: 11px; border: none;"
             )
             layout.addWidget(tag)
 
-        # 跨历史批次重复警告
         if inv.error_message and inv.error_message.startswith("DUPLICATE:"):
-            warn = QLabel("⚠ 重复")
+            warn = QLabel("重复")
             warn.setStyleSheet(
-                "background: #FFC107; color: #333; padding: 2px 6px; border-radius: 3px;"
+                "background: #FFF3CD; color: #856404; padding: 1px 5px;"
+                "border-radius: 3px; font-size: 11px; border: 1px solid #FFE082;"
             )
             warn.setToolTip(inv.error_message.replace("DUPLICATE:", "").strip())
             layout.addWidget(warn)
 
-        # 删除按钮
         del_btn = QPushButton("×")
-        del_btn.setFixedSize(22, 22)
-        del_btn.setStyleSheet(
-            "QPushButton { background: transparent; color: #aaa; font-size: 16px; border: none; }"
-            "QPushButton:hover { color: #e53935; }"
-        )
-        del_btn.setToolTip("删除此发票记录")
+        del_btn.setFixedSize(20, 20)
+        del_btn.setStyleSheet("""
+            QPushButton { background: transparent; color: #CCCCCC; font-size: 15px;
+                          border: none; border-radius: 3px; padding: 0; }
+            QPushButton:hover { color: #D32F2F; background: #FFEBEE; }
+        """)
+        del_btn.setToolTip("删除此记录")
         del_btn.clicked.connect(lambda: self.delete_requested.emit(self.file_path))
         layout.addWidget(del_btn)
 
@@ -118,7 +138,7 @@ class InvoiceList(QWidget):
 
         # 全选/删除工具栏
         toolbar = QWidget()
-        toolbar.setStyleSheet("background: #f5f5f5; border-bottom: 1px solid #ddd;")
+        toolbar.setStyleSheet("background: #FAFAFA; border-bottom: 1px solid #E8E8E8;")
         tb_layout = QHBoxLayout(toolbar)
         tb_layout.setContentsMargins(8, 4, 8, 4)
         tb_layout.setSpacing(6)
@@ -139,8 +159,8 @@ class InvoiceList(QWidget):
         self._drop_hint = QLabel("拖拽发票文件或文件夹到此处导入")
         self._drop_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._drop_hint.setStyleSheet(
-            "background: #E3F2FD; color: #1565C0; padding: 12px; "
-            "border: 2px dashed #90CAF9; border-radius: 6px; font-size: 13px;"
+            "background: #F0F7FF; color: #1E5BA8; padding: 24px; "
+            "border: 2px dashed #90CAF9; border-radius: 8px; font-size: 14px;"
         )
         layout.addWidget(self._drop_hint)
 
@@ -151,7 +171,8 @@ class InvoiceList(QWidget):
         self._container = QWidget()
         self._list_layout = QVBoxLayout(self._container)
         self._list_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self._list_layout.setSpacing(4)
+        self._list_layout.setSpacing(6)
+        self._list_layout.setContentsMargins(8, 8, 8, 8)
         scroll.setWidget(self._container)
 
         self._cards: dict = {}
@@ -221,8 +242,8 @@ class InvoiceList(QWidget):
         has_cards = bool(self._cards)
         self._drop_hint.setVisible(not has_cards)
         self._drop_hint.setStyleSheet(
-            "background: #E3F2FD; color: #1565C0; padding: 12px; "
-            "border: 2px dashed #90CAF9; border-radius: 6px; font-size: 13px;"
+            "background: #F0F7FF; color: #1E5BA8; padding: 24px; "
+            "border: 2px dashed #90CAF9; border-radius: 8px; font-size: 14px;"
         )
         self._drop_hint.setText("拖拽发票文件或文件夹到此处导入")
 

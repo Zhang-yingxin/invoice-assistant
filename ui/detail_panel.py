@@ -27,16 +27,22 @@ class DetailPanel(QWidget):
         self._preview.setMinimumWidth(200)
         self._preview.setMinimumHeight(200)
         self._preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self._preview.setStyleSheet("background: #f0f0f0;")
+        self._preview.setStyleSheet(
+            "background: #F8F9FA; border: 1px solid #E8E8E8; border-radius: 8px;"
+        )
         layout.addWidget(self._preview, 1)
 
         # 右：表单
         right = QWidget()
+        right.setMinimumWidth(320)
         right_layout = QVBoxLayout(right)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("border: none;")
         form_widget = QWidget()
         self._form = QFormLayout(form_widget)
+        self._form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self._form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         scroll.setWidget(form_widget)
         right_layout.addWidget(scroll)
 
@@ -59,6 +65,7 @@ class DetailPanel(QWidget):
             ("tax_rate", "税率"),
         ]:
             edit = QLineEdit()
+            edit.setMinimumWidth(120)
             self._form.addRow(label, edit)
             self._fields[field] = edit
 
@@ -74,9 +81,26 @@ class DetailPanel(QWidget):
             self._fields[field] = spin
 
         btn_layout = QHBoxLayout()
+        btn_layout.setContentsMargins(8, 8, 8, 8)
+        btn_layout.setSpacing(8)
         self._confirm_btn = QPushButton("确认")
+        self._confirm_btn.setStyleSheet("""
+            QPushButton {
+                background: #1E5BA8; color: white; border: none;
+                border-radius: 4px; padding: 8px 24px; font-size: 14px; font-weight: bold;
+            }
+            QPushButton:hover { background: #0D47A1; }
+            QPushButton:disabled { background: #E0E0E0; color: #AAAAAA; }
+        """)
         self._confirm_btn.clicked.connect(self._on_confirm)
         self._manual_btn = QPushButton("手动填写")
+        self._manual_btn.setStyleSheet("""
+            QPushButton {
+                background: #F5F5F5; color: #666; border: 1px solid #E0E0E0;
+                border-radius: 4px; padding: 8px 16px; font-size: 13px;
+            }
+            QPushButton:hover { background: #EEEEEE; }
+        """)
         self._manual_btn.clicked.connect(self._on_manual)
         self._manual_btn.hide()
         btn_layout.addWidget(self._manual_btn)
@@ -120,7 +144,8 @@ class DetailPanel(QWidget):
             pix = QPixmap(inv.file_path)
             if not pix.isNull():
                 self._preview.setPixmap(
-                    pix.scaled(400, 600, Qt.AspectRatioMode.KeepAspectRatio,
+                    pix.scaled(max(self._preview.width(), 300), max(self._preview.height(), 400),
+                               Qt.AspectRatioMode.KeepAspectRatio,
                                Qt.TransformationMode.SmoothTransformation)
                 )
             else:
@@ -134,14 +159,16 @@ class DetailPanel(QWidget):
         try:
             doc = fitz.open(file_path)
             page = doc[0]
-            mat = fitz.Matrix(2.0, 2.0)  # 2x 缩放，清晰度够用
+            mat = fitz.Matrix(3.0, 3.0)  # 3x for sharper rendering
             pix = page.get_pixmap(matrix=mat)
             img_bytes = pix.tobytes("png")
             qpix = QPixmap()
             qpix.loadFromData(img_bytes)
             if not qpix.isNull():
+                w = max(self._preview.width(), 300)
+                h = max(self._preview.height(), 400)
                 self._preview.setPixmap(
-                    qpix.scaled(self._preview.width(), self._preview.height(),
+                    qpix.scaled(w, h,
                                 Qt.AspectRatioMode.KeepAspectRatio,
                                 Qt.TransformationMode.SmoothTransformation)
                 )

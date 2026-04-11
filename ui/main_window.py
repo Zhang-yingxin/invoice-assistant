@@ -4,7 +4,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QPushButton, QFileDialog, QMessageBox, QStackedWidget, QLabel,
-    QSplitter
+    QSplitter, QDialog, QRadioButton, QDialogButtonBox
 )
 from PyQt6.QtCore import QThread, pyqtSignal, Qt
 from ui.sidebar import Sidebar
@@ -63,6 +63,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(800, 500)
 
         central = QWidget()
+        central.setStyleSheet("background: #F5F6FA;")
         self.setCentralWidget(central)
         h_layout = QHBoxLayout(central)
         h_layout.setContentsMargins(0, 0, 0, 0)
@@ -134,8 +135,8 @@ class MainWindow(QMainWindow):
         self._detail.setMinimumWidth(400)
         splitter.addWidget(self._detail)
 
-        splitter.setStretchFactor(0, 2)
-        splitter.setStretchFactor(1, 3)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 2)
 
         inv_layout.addWidget(splitter)
         self._stack.addWidget(inv_page)      # index 0
@@ -292,19 +293,46 @@ class MainWindow(QMainWindow):
 
     def _on_bulk_confirm(self):
         invoices = self._db.get_all()
-        eligible = [i for i in invoices
-                    if i.status == InvoiceStatus.OCR_DONE and not i.low_confidence_fields]
-        if not eligible:
+        eligible_all = [i for i in invoices
+                        if i.status == InvoiceStatus.OCR_DONE and not i.low_confidence_fields]
+        if not eligible_all:
             QMessageBox.information(self, "批量确认", "没有可批量确认的发票")
             return
-        reply = QMessageBox.question(
-            self, "批量确认",
-            f"共 {len(eligible)} 张高置信度发票，平均置信度 100%，确认后将标记为已完成",
+
+        eligible_batch = [i for i in eligible_all
+                          if i.batch_id == self._current_batch_id] if self._current_batch_id else []
+
+        # Build dialog
+        dlg = QDialog(self)
+        dlg.setWindowTitle("批量确认")
+        dlg_layout = QVBoxLayout(dlg)
+
+        dlg_layout.addWidget(QLabel("请选择确认范围："))
+
+        radio_all = QRadioButton(f"全部待确认 ({len(eligible_all)} 张)")
+        radio_all.setChecked(True)
+        dlg_layout.addWidget(radio_all)
+
+        radio_batch = QRadioButton(f"仅本次导入 ({len(eligible_batch)} 张)")
+        radio_batch.setEnabled(bool(eligible_batch))
+        dlg_layout.addWidget(radio_batch)
+
+        btn_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        if reply == QMessageBox.StandardButton.Yes:
-            for inv in eligible:
-                self._db.update_status(inv.file_path, InvoiceStatus.CONFIRMED)
-            self._refresh()
+        btn_box.button(QDialogButtonBox.StandardButton.Ok).setText("确认")
+        btn_box.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
+        btn_box.accepted.connect(dlg.accept)
+        btn_box.rejected.connect(dlg.reject)
+        dlg_layout.addWidget(btn_box)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        targets = eligible_batch if radio_batch.isChecked() else eligible_all
+        for inv in targets:
+            self._db.update_status(inv.file_path, InvoiceStatus.CONFIRMED)
+        self._refresh()
 
     def _on_delete_invoice(self, file_path: str):
         from store.db import InvoiceRecord
