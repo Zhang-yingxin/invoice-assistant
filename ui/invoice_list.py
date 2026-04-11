@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import List
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QScrollArea, QFrame,
-    QHBoxLayout, QLabel, QPushButton
+    QHBoxLayout, QLabel, QPushButton, QCheckBox
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent
@@ -22,8 +22,9 @@ STATUS_COLOR = {
 
 
 class InvoiceCard(QFrame):
-    clicked = pyqtSignal(str)   # file_path
+    clicked = pyqtSignal(str)           # file_path
     delete_requested = pyqtSignal(str)  # file_path
+    check_changed = pyqtSignal(str, bool)  # file_path, checked
 
     def __init__(self, inv: Invoice, parent=None):
         super().__init__(parent)
@@ -33,6 +34,14 @@ class InvoiceCard(QFrame):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 4, 6, 4)
+
+        # 复选框
+        self._checkbox = QCheckBox()
+        self._checkbox.setFixedWidth(20)
+        self._checkbox.stateChanged.connect(
+            lambda state: self.check_changed.emit(self.file_path, state == 2)
+        )
+        layout.addWidget(self._checkbox)
 
         # 左侧：文件名 + 识别时间
         left = QWidget()
@@ -80,22 +89,53 @@ class InvoiceCard(QFrame):
         del_btn.clicked.connect(lambda: self.delete_requested.emit(self.file_path))
         layout.addWidget(del_btn)
 
+    def set_checked(self, checked: bool):
+        self._checkbox.blockSignals(True)
+        self._checkbox.setChecked(checked)
+        self._checkbox.blockSignals(False)
+
+    def is_checked(self) -> bool:
+        return self._checkbox.isChecked()
+
     def mousePressEvent(self, event):
-        self.clicked.emit(self.file_path)
+        # 点击卡片主体区域时触发 clicked（不拦截复选框自身的点击）
+        if not self._checkbox.geometry().contains(event.pos()):
+            self.clicked.emit(self.file_path)
 
 
 class InvoiceList(QWidget):
-    invoice_selected = pyqtSignal(str)   # file_path
-    invoice_delete = pyqtSignal(str)     # file_path
-    files_dropped = pyqtSignal(list)     # list[Path]
+    invoice_selected = pyqtSignal(str)    # file_path
+    invoice_delete = pyqtSignal(str)      # file_path
+    invoices_delete_batch = pyqtSignal(list)  # list[str] file_paths
+    files_dropped = pyqtSignal(list)      # list[Path]
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        # 拖拽提示条（平时隐藏）
+        # 全选/删除工具栏
+        toolbar = QWidget()
+        toolbar.setStyleSheet("background: #f5f5f5; border-bottom: 1px solid #ddd;")
+        tb_layout = QHBoxLayout(toolbar)
+        tb_layout.setContentsMargins(8, 4, 8, 4)
+        tb_layout.setSpacing(6)
+        self._select_all_cb = QCheckBox("全选")
+        self._select_all_cb.stateChanged.connect(self._on_select_all)
+        tb_layout.addWidget(self._select_all_cb)
+        tb_layout.addStretch()
+        self._del_selected_btn = QPushButton("删除所选")
+        self._del_selected_btn.setEnabled(False)
+        self._del_selected_btn.setStyleSheet(
+            "QPushButton { color: #e53935; } QPushButton:disabled { color: #ccc; }"
+        )
+        self._del_selected_btn.clicked.connect(self._on_delete_selected)
+        tb_layout.addWidget(self._del_selected_btn)
+        layout.addWidget(toolbar)
+
+        # 拖拽提示条
         self._drop_hint = QLabel("拖拽发票文件或文件夹到此处导入")
         self._drop_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._drop_hint.setStyleSheet(
@@ -109,29 +149,62 @@ class InvoiceList(QWidget):
         layout.addWidget(scroll, 1)
 
         self._container = QWidget()
-        self._layout = QVBoxLayout(self._container)
-        self._layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self._layout.setSpacing(4)
+        self._list_layout = QVBoxLayout(self._container)
+        self._list_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self._list_layout.setSpacing(4)
         scroll.setWidget(self._container)
 
         self._cards: dict = {}
 
     def set_invoices(self, invoices: List[Invoice]):
-        while self._layout.count():
-            item = self._layout.takeAt(0)
+        while self._list_layout.count():
+            item = self._list_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         self._cards.clear()
+        self._select_all_cb.blockSignals(True)
+        self._select_all_cb.setChecked(False)
+        self._select_all_cb.blockSignals(False)
+        self._del_selected_btn.setEnabled(False)
 
-        # 没有发票时显示拖拽提示，有发票时隐藏
         self._drop_hint.setVisible(len(invoices) == 0)
 
         for inv in invoices:
             card = InvoiceCard(inv)
             card.clicked.connect(self.invoice_selected)
             card.delete_requested.connect(self.invoice_delete)
-            self._layout.addWidget(card)
+            card.check_changed.connect(self._on_card_check_changed)
+            self._list_layout.addWidget(card)
             self._cards[inv.file_path] = card
+
+    def _on_select_all(self, state: int):
+        checked = (state == 2)
+        for card in self._cards.values():
+            card.set_checked(checked)
+        self._update_delete_btn()
+
+    def _on_card_check_changed(self, file_path: str, checked: bool):
+        self._update_delete_btn()
+        # 同步全选框状态
+        all_checked = all(c.is_checked() for c in self._cards.values())
+        any_checked = any(c.is_checked() for c in self._cards.values())
+        self._select_all_cb.blockSignals(True)
+        if all_checked:
+            self._select_all_cb.setCheckState(Qt.CheckState.Checked)
+        elif any_checked:
+            self._select_all_cb.setCheckState(Qt.CheckState.PartiallyChecked)
+        else:
+            self._select_all_cb.setCheckState(Qt.CheckState.Unchecked)
+        self._select_all_cb.blockSignals(False)
+
+    def _update_delete_btn(self):
+        has_selected = any(c.is_checked() for c in self._cards.values())
+        self._del_selected_btn.setEnabled(has_selected)
+
+    def _on_delete_selected(self):
+        selected = [fp for fp, card in self._cards.items() if card.is_checked()]
+        if selected:
+            self.invoices_delete_batch.emit(selected)
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
