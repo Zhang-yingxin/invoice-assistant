@@ -146,6 +146,7 @@ class MainWindow(QMainWindow):
         self._inv_list.files_dropped.connect(self._start_ocr)
         self._inv_list.invoice_delete.connect(self._on_delete_invoice)
         self._inv_list.invoices_delete_batch.connect(self._on_delete_batch)
+        self._inv_list.bulk_confirm_clicked.connect(self._on_bulk_confirm)
         self._inv_list.setMinimumWidth(260)
         splitter.addWidget(self._inv_list)
 
