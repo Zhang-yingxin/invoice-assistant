@@ -55,7 +55,15 @@ class Database:
         _db.init(str(db_path), pragmas={"journal_mode": "wal", "busy_timeout": 3000})
         _db.connect(reuse_if_open=True)
         _db.create_tables([InvoiceRecord, SettingsRecord], safe=True)
+        self._migrate_schema()
         self._reset_processing_to_pending()
+
+    def _migrate_schema(self):
+        """为旧数据库补充新增列，避免 OperationalError。"""
+        cursor = _db.execute_sql("PRAGMA table_info(invoices)")
+        existing = {row[1] for row in cursor.fetchall()}
+        if "created_at" not in existing:
+            _db.execute_sql("ALTER TABLE invoices ADD COLUMN created_at VARCHAR(32)")
 
     def _reset_processing_to_pending(self):
         InvoiceRecord.update(status=InvoiceStatus.PENDING.value).where(
