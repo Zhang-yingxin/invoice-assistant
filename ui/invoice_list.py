@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import List
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QScrollArea, QFrame,
-    QHBoxLayout, QLabel, QPushButton, QCheckBox, QSizePolicy
+    QHBoxLayout, QLabel, QPushButton, QCheckBox, QSizePolicy, QComboBox
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent
@@ -27,7 +27,7 @@ class InvoiceCard(QFrame):
     check_changed = pyqtSignal(str, bool)  # file_path, checked
     reocr_requested = pyqtSignal(str)   # file_path
 
-    def __init__(self, inv: Invoice, parent=None):
+    def __init__(self, inv: Invoice, number: int = 0, parent=None):
         super().__init__(parent)
         self.file_path = inv.file_path
         self.status = inv.status
@@ -44,6 +44,14 @@ class InvoiceCard(QFrame):
             lambda state: self.check_changed.emit(self.file_path, state == 2)
         )
         layout.addWidget(self._checkbox)
+
+        # 序号
+        if number > 0:
+            num_label = QLabel(f"{number}.")
+            num_label.setFixedWidth(32)
+            num_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            num_label.setStyleSheet("color: #999; font-size: 11px;")
+            layout.addWidget(num_label)
 
         # 左侧：文件名 + 识别时间
         left = QWidget()
@@ -196,39 +204,180 @@ class InvoiceList(QWidget):
         self._list_layout.setSpacing(4)
         scroll.setWidget(self._container)
 
-        self._cards: dict = {}
+        # 分页控制栏
+        page_bar = QWidget()
+        page_bar.setStyleSheet("background: #1E3A5F; border-top: 1px solid #0D2540;")
+        pb_layout = QHBoxLayout(page_bar)
+        pb_layout.setContentsMargins(8, 4, 8, 4)
+        pb_layout.setSpacing(6)
+
+        lbl_per = QLabel("每页")
+        lbl_per.setStyleSheet("color: #fff;")
+        pb_layout.addWidget(lbl_per)
+        self._page_size_combo = QComboBox()
+        self._page_size_combo.addItems(["10", "20", "50", "100"])
+        self._page_size_combo.setCurrentText("20")
+        self._page_size_combo.setFixedWidth(60)
+        self._page_size_combo.setStyleSheet(
+            "QComboBox { background: #2A4F7A; color: #fff; border: 1px solid #3A6FA0; "
+            "border-radius: 3px; padding: 1px 4px; }"
+            "QComboBox::drop-down { border: none; }"
+            "QComboBox QAbstractItemView { background: #2A4F7A; color: #fff; "
+            "selection-background-color: #1E5BA8; }"
+        )
+        self._page_size_combo.currentTextChanged.connect(self._on_page_size_changed)
+        pb_layout.addWidget(self._page_size_combo)
+        lbl_row = QLabel("条")
+        lbl_row.setStyleSheet("color: #fff;")
+        pb_layout.addWidget(lbl_row)
+
+        pb_layout.addStretch()
+
+        btn_style = (
+            "QPushButton { border: 1px solid #3A6FA0; border-radius: 3px; "
+            "padding: 0 8px; background: #2A4F7A; color: #fff; }"
+            "QPushButton:hover { background: #3A6FA0; }"
+            "QPushButton:disabled { color: #5A7A9A; background: #1A3050; border-color: #2A4F7A; }"
+        )
+
+        self._prev_btn = QPushButton("◀ 上一页")
+        self._prev_btn.setFixedHeight(24)
+        self._prev_btn.setStyleSheet(btn_style)
+        self._prev_btn.clicked.connect(self._on_prev_page)
+        pb_layout.addWidget(self._prev_btn)
+
+        self._page_label = QLabel("第1页/共1页")
+        self._page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._page_label.setStyleSheet("color: #fff; font-size: 12px;")
+        self._page_label.setMinimumWidth(90)
+        pb_layout.addWidget(self._page_label)
+
+        self._next_btn = QPushButton("下一页 ▶")
+        self._next_btn.setFixedHeight(24)
+        self._next_btn.setStyleSheet(btn_style)
+        self._next_btn.clicked.connect(self._on_next_page)
+        pb_layout.addWidget(self._next_btn)
+
+        layout.addWidget(page_bar)
+
+        self._cards: dict = {}          # file_path -> InvoiceCard (current page only)
+        self._all_invoices: List[Invoice] = []
+        self._checked_fps: set = set()  # tracks checked state across all pages
+        self._current_page: int = 0
+        self._page_size: int = 20
+
+    # ------------------------------------------------------------------ #
+    #  Public API                                                          #
+    # ------------------------------------------------------------------ #
 
     def set_invoices(self, invoices: List[Invoice]):
+        self._all_invoices = list(invoices)
+        # Remove checked items that are no longer in the list
+        fps = {inv.file_path for inv in invoices}
+        self._checked_fps = self._checked_fps & fps
+        self._current_page = 0
+        self._render_page()
+
+    def get_selected_file_paths(self) -> list:
+        return list(self._checked_fps)
+
+    # ------------------------------------------------------------------ #
+    #  Pagination internals                                                #
+    # ------------------------------------------------------------------ #
+
+    def _total_pages(self) -> int:
+        if not self._all_invoices:
+            return 1
+        return max(1, (len(self._all_invoices) + self._page_size - 1) // self._page_size)
+
+    def _render_page(self):
+        # Clear current cards
         while self._list_layout.count():
             item = self._list_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         self._cards.clear()
+
         self._select_all_cb.blockSignals(True)
         self._select_all_cb.setChecked(False)
         self._select_all_cb.blockSignals(False)
-        self._del_selected_btn.setEnabled(False)
 
-        self._drop_hint.setVisible(len(invoices) == 0)
+        self._drop_hint.setVisible(len(self._all_invoices) == 0)
 
-        for inv in invoices:
-            card = InvoiceCard(inv)
+        total = len(self._all_invoices)
+        start = self._current_page * self._page_size
+        end = min(start + self._page_size, total)
+        page_invoices = self._all_invoices[start:end]
+
+        for idx, inv in enumerate(page_invoices):
+            number = start + idx + 1  # global sequential number
+            card = InvoiceCard(inv, number=number)
             card.clicked.connect(self.invoice_selected)
             card.delete_requested.connect(self.invoice_delete)
             card.check_changed.connect(self._on_card_check_changed)
             card.reocr_requested.connect(lambda fp: self.reocr_selected.emit([fp]))
+            # Restore checked state
+            if inv.file_path in self._checked_fps:
+                card.set_checked(True)
             self._list_layout.addWidget(card)
             self._cards[inv.file_path] = card
 
+        # Update pagination controls
+        total_pages = self._total_pages()
+        self._page_label.setText(f"第{self._current_page + 1}页/共{total_pages}页")
+        self._prev_btn.setEnabled(self._current_page > 0)
+        self._next_btn.setEnabled(self._current_page < total_pages - 1)
+
+        self._sync_select_all_cb()
+        self._update_delete_btn()
+
+    def _on_page_size_changed(self, text: str):
+        try:
+            self._page_size = int(text)
+        except ValueError:
+            return
+        self._current_page = 0
+        self._render_page()
+
+    def _on_prev_page(self):
+        if self._current_page > 0:
+            self._current_page -= 1
+            self._render_page()
+
+    def _on_next_page(self):
+        if self._current_page < self._total_pages() - 1:
+            self._current_page += 1
+            self._render_page()
+
+    # ------------------------------------------------------------------ #
+    #  Selection logic                                                     #
+    # ------------------------------------------------------------------ #
+
     def _on_select_all(self, state: int):
         checked = (state == 2)
-        for card in self._cards.values():
+        # Apply to current page cards
+        for fp, card in self._cards.items():
             card.set_checked(checked)
+            if checked:
+                self._checked_fps.add(fp)
+            else:
+                self._checked_fps.discard(fp)
         self._update_delete_btn()
 
     def _on_card_check_changed(self, file_path: str, checked: bool):
+        if checked:
+            self._checked_fps.add(file_path)
+        else:
+            self._checked_fps.discard(file_path)
         self._update_delete_btn()
-        # 同步全选框状态
+        self._sync_select_all_cb()
+
+    def _sync_select_all_cb(self):
+        if not self._cards:
+            self._select_all_cb.blockSignals(True)
+            self._select_all_cb.setCheckState(Qt.CheckState.Unchecked)
+            self._select_all_cb.blockSignals(False)
+            return
         all_checked = all(c.is_checked() for c in self._cards.values())
         any_checked = any(c.is_checked() for c in self._cards.values())
         self._select_all_cb.blockSignals(True)
@@ -241,32 +390,33 @@ class InvoiceList(QWidget):
         self._select_all_cb.blockSignals(False)
 
     def _update_delete_btn(self):
-        has_selected = any(c.is_checked() for c in self._cards.values())
+        has_selected = bool(self._checked_fps)
         has_failed_selected = any(
-            c.is_checked() and c.status == InvoiceStatus.FAILED
-            for c in self._cards.values()
+            inv.file_path in self._checked_fps and inv.status == InvoiceStatus.FAILED
+            for inv in self._all_invoices
         )
         self._del_selected_btn.setEnabled(has_selected)
         self._confirm_selected_btn.setEnabled(has_selected)
         self._reocr_selected_btn.setEnabled(has_failed_selected)
 
-    def get_selected_file_paths(self) -> list:
-        return [fp for fp, card in self._cards.items() if card.is_checked()]
-
     def _on_reocr_selected(self):
-        selected = self.get_selected_file_paths()
+        selected = list(self._checked_fps)
         if selected:
             self.reocr_selected.emit(selected)
 
     def _on_confirm_selected(self):
-        selected = self.get_selected_file_paths()
+        selected = list(self._checked_fps)
         if selected:
             self.confirm_selected.emit(selected)
 
     def _on_delete_selected(self):
-        selected = [fp for fp, card in self._cards.items() if card.is_checked()]
+        selected = list(self._checked_fps)
         if selected:
             self.invoices_delete_batch.emit(selected)
+
+    # ------------------------------------------------------------------ #
+    #  Drag & drop                                                         #
+    # ------------------------------------------------------------------ #
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -279,8 +429,7 @@ class InvoiceList(QWidget):
             self._drop_hint.setText("松开鼠标即可导入")
 
     def dragLeaveEvent(self, event):
-        # 恢复提示条状态
-        has_cards = bool(self._cards)
+        has_cards = bool(self._all_invoices)
         self._drop_hint.setVisible(not has_cards)
         self._drop_hint.setStyleSheet(
             "background: #E3F2FD; color: #1565C0; padding: 12px; "
@@ -294,7 +443,6 @@ class InvoiceList(QWidget):
         for url in event.mimeData().urls():
             p = Path(url.toLocalFile())
             if p.is_dir():
-                # 递归扫描文件夹，收集所有支持格式
                 for f in p.rglob("*"):
                     if f.is_file() and f.suffix.lower() in SUPPORTED_SUFFIXES:
                         paths.append(f)
