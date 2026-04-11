@@ -111,7 +111,8 @@ class DetailPanel(QWidget):
         self._manual_btn.setVisible(inv.status == InvoiceStatus.FAILED)
 
         # 预览
-        if Path(inv.file_path).suffix.lower() in (".jpg", ".jpeg", ".png"):
+        suffix = Path(inv.file_path).suffix.lower()
+        if suffix in (".jpg", ".jpeg", ".png"):
             pix = QPixmap(inv.file_path)
             if not pix.isNull():
                 self._preview.setPixmap(
@@ -120,8 +121,30 @@ class DetailPanel(QWidget):
                 )
             else:
                 self._preview.setText(f"图片加载失败\n{Path(inv.file_path).name}")
+        elif suffix == ".pdf":
+            self._load_pdf_preview(inv.file_path)
         else:
-            self._preview.setText(f"PDF预览\n{Path(inv.file_path).name}")
+            self._preview.setText(f"不支持预览\n{Path(inv.file_path).name}")
+
+    def _load_pdf_preview(self, file_path: str):
+        try:
+            import fitz
+            doc = fitz.open(file_path)
+            page = doc[0]
+            mat = fitz.Matrix(2.0, 2.0)  # 2x 缩放，清晰度够用
+            pix = page.get_pixmap(matrix=mat)
+            img_bytes = pix.tobytes("png")
+            qpix = QPixmap()
+            qpix.loadFromData(img_bytes)
+            if not qpix.isNull():
+                self._preview.setPixmap(
+                    qpix.scaled(400, 600, Qt.AspectRatioMode.KeepAspectRatio,
+                                Qt.TransformationMode.SmoothTransformation)
+                )
+            else:
+                self._preview.setText(f"PDF渲染失败\n{Path(file_path).name}")
+        except Exception as e:
+            self._preview.setText(f"PDF预览失败\n{e}")
 
     def _on_confirm(self):
         if self._current_inv:
