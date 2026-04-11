@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 from typing import List
 from PyQt6.QtWidgets import (
@@ -101,8 +102,11 @@ class ExportSummaryDialog(QDialog):
         self._export_btn.setEnabled(bool(to_export))
 
     def _do_export(self):
+        default_name = datetime.now().strftime("%Y%m%d_%H%M%S") + ".xlsx"
+        default_dir = self._default_path or ""
+        default_full = str(Path(default_dir) / default_name) if default_dir else default_name
         path, _ = QFileDialog.getSaveFileName(
-            self, "保存Excel", self._default_path, "Excel文件 (*.xlsx)"
+            self, "保存Excel", default_full, "Excel文件 (*.xlsx)"
         )
         if not path:
             return
