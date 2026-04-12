@@ -40,9 +40,10 @@ class Sidebar(QWidget):
         self._btns["pending"].setChecked(True)
 
     def _on_click(self, key: str):
-        if key not in ("import", "import_folder", "phone_upload"):
+        non_checkable = ("import", "import_folder", "phone_upload")
+        if key not in non_checkable:
             for k, btn in self._btns.items():
-                if k not in ("import", "import_folder", "phone_upload"):
+                if k not in non_checkable:
                     btn.setChecked(k == key)
         self.nav_changed.emit(key)
 

@@ -494,6 +494,9 @@ class MainWindow(QMainWindow):
         reply = QMessageBox.question(self, "退出登录", "确认退出登录？")
         if reply != QMessageBox.StandardButton.Yes:
             return
+        # 清除自动登录凭据，确保下次需要重新登录
+        self._db.set_setting("auto_login_user_id", "")
+        self._db.set_setting("auto_login_expire", "")
         self.close()
         import subprocess, sys
         subprocess.Popen([sys.executable] + sys.argv)
