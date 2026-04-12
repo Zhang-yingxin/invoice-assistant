@@ -102,8 +102,12 @@ class Database:
             InvoiceRecord.file_path == file_path
         ).execute()
 
-    def get_all(self) -> List[Invoice]:
-        return [self._to_invoice(r) for r in InvoiceRecord.select().order_by(InvoiceRecord.id.desc())]
+    def get_all(self, user_id: int = None, is_admin: bool = False) -> List[Invoice]:
+        """返回发票列表。管理员看全部，普通用户只看自己的。"""
+        query = InvoiceRecord.select().order_by(InvoiceRecord.id.desc())
+        if not is_admin and user_id is not None:
+            query = query.where(InvoiceRecord.user_id == user_id)
+        return [self._to_invoice(r) for r in query]
 
     def is_duplicate(self, invoice_number: str, issue_date: str) -> bool:
         return InvoiceRecord.select().where(
@@ -199,11 +203,12 @@ class Database:
             "batch_id": inv.batch_id,
             "error_message": inv.error_message,
             "created_at": inv.created_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "user_id": getattr(inv, "user_id", None),
         }
 
     @staticmethod
     def _to_invoice(r: InvoiceRecord) -> Invoice:
-        return Invoice(
+        inv_obj = Invoice(
             file_path=r.file_path,
             status=InvoiceStatus(r.status),
             sheet=InvoiceSheet(r.sheet),
@@ -225,3 +230,5 @@ class Database:
             error_message=r.error_message,
             created_at=r.created_at,
         )
+        inv_obj.user_id = r.user_id
+        return inv_obj

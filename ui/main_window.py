@@ -58,9 +58,10 @@ class OCRWorker(QThread):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, current_user: dict):
         super().__init__()
         self._db = db
+        self._current_user = current_user
         self._worker = None
         self._ocr_errors = []
         self._current_batch_id: str = ""
@@ -75,7 +76,7 @@ class MainWindow(QMainWindow):
         h_layout.setSpacing(0)
 
         # 侧边栏
-        self._sidebar = Sidebar()
+        self._sidebar = Sidebar(role=current_user.get("role", "user"))
         self._sidebar.nav_changed.connect(self._on_nav)
         h_layout.addWidget(self._sidebar)
 
@@ -85,8 +86,29 @@ class MainWindow(QMainWindow):
         v_layout.setContentsMargins(0, 0, 0, 0)
         v_layout.setSpacing(0)
 
+        # 顶部用户信息栏
+        user_bar = QWidget()
+        user_bar.setStyleSheet("background: #F5F5F5; border-bottom: 1px solid #E0E0E0;")
+        ub_layout = QHBoxLayout(user_bar)
+        ub_layout.setContentsMargins(12, 4, 12, 4)
+        role_text = "管理员" if current_user.get("role") == "admin" else "普通用户"
+        user_label = QLabel(f"当前用户：{current_user['username']}（{role_text}）")
+        user_label.setStyleSheet("color: #555; font-size: 12px;")
+        ub_layout.addWidget(user_label)
+        ub_layout.addStretch()
+        logout_btn = QPushButton("退出登录")
+        logout_btn.setStyleSheet(
+            "QPushButton { color: #888; background: transparent; border: 1px solid #ccc; "
+            "border-radius: 3px; padding: 2px 10px; font-size: 12px; }"
+            "QPushButton:hover { color: #333; border-color: #999; }"
+        )
+        logout_btn.clicked.connect(self._logout)
+        ub_layout.addWidget(logout_btn)
+        v_layout.addWidget(user_bar)
+
         # 崩溃恢复提示条（如有未完成工作）
-        invoices = db.get_all()
+        invoices = db.get_all(user_id=current_user["id"],
+                               is_admin=current_user["role"] == "admin")
         recovering = [i for i in invoices if i.status in (
             InvoiceStatus.PENDING, InvoiceStatus.OCR_DONE, InvoiceStatus.MANUAL_EDITING
         )]
@@ -175,6 +197,10 @@ class MainWindow(QMainWindow):
         self._settings_placeholder = QLabel("设置页（加载中...）")
         self._stack.addWidget(self._settings_placeholder)  # index 1
 
+        # 用户管理页（管理员专用，懒加载）
+        self._user_mgmt_placeholder = QLabel("用户管理（加载中...）")
+        self._stack.addWidget(self._user_mgmt_placeholder)  # index 2
+
         v_layout.addWidget(self._stack, 1)
         h_layout.addWidget(right, 1)
 
@@ -187,7 +213,8 @@ class MainWindow(QMainWindow):
         return BaiduOCRBackend(ak, sk)
 
     def _refresh(self):
-        invoices = self._db.get_all()
+        invoices = self._db.get_all(user_id=self._current_user["id"],
+                                     is_admin=self._current_user["role"] == "admin")
         confirmed = sum(1 for i in invoices if i.status in (
             InvoiceStatus.CONFIRMED, InvoiceStatus.MANUAL_DONE))
         pending = sum(1 for i in invoices if i.status in (
@@ -223,19 +250,31 @@ class MainWindow(QMainWindow):
         elif key == "settings":
             self._load_settings_page()
             self._stack.setCurrentIndex(1)
+        elif key == "user_management":
+            self._load_user_management_page()
+            self._stack.setCurrentIndex(2)
         else:
             self._current_filter = key  # "pending" / "done" / "failed"
             self._stack.setCurrentIndex(0)
             self._refresh()
 
     def _load_settings_page(self):
-        # 懒加载设置页
         from ui.settings import SettingsPage
         if isinstance(self._stack.widget(1), SettingsPage):
             return
-        settings_page = SettingsPage(self._db)
+        settings_page = SettingsPage(self._db, self._current_user)
         self._stack.removeWidget(self._stack.widget(1))
         self._stack.insertWidget(1, settings_page)
+
+    def _load_user_management_page(self):
+        from ui.user_management import UserManagementPage
+        from core.auth import AuthService
+        if isinstance(self._stack.widget(2), UserManagementPage):
+            return
+        auth = AuthService(self._db)
+        mgmt_page = UserManagementPage(self._db, auth)
+        self._stack.removeWidget(self._stack.widget(2))
+        self._stack.insertWidget(2, mgmt_page)
 
     def _import_files(self):
         files, _ = QFileDialog.getOpenFileNames(
@@ -321,7 +360,8 @@ class MainWindow(QMainWindow):
             self._worker.cancelled = True
 
     def _on_invoice_selected(self, file_path: str):
-        invoices = self._db.get_all()
+        invoices = self._db.get_all(user_id=self._current_user["id"],
+                                     is_admin=self._current_user["role"] == "admin")
         inv = next((i for i in invoices if i.file_path == file_path), None)
         if inv:
             self._detail.load_invoice(inv)
@@ -333,7 +373,8 @@ class MainWindow(QMainWindow):
 
     def _on_manual_requested(self, file_path: str):
         from ui.manual_form import ManualForm
-        invoices = self._db.get_all()
+        invoices = self._db.get_all(user_id=self._current_user["id"],
+                                     is_admin=self._current_user["role"] == "admin")
         inv = next((i for i in invoices if i.file_path == file_path), None)
         if not inv:
             return
@@ -346,7 +387,8 @@ class MainWindow(QMainWindow):
         self._refresh()
 
     def _on_bulk_confirm(self):
-        invoices = self._db.get_all()
+        invoices = self._db.get_all(user_id=self._current_user["id"],
+                                     is_admin=self._current_user["role"] == "admin")
         eligible_all = [i for i in invoices
                         if i.status == InvoiceStatus.OCR_DONE and not i.low_confidence_fields]
         if not eligible_all:
@@ -420,7 +462,8 @@ class MainWindow(QMainWindow):
 
     def _on_export(self):
         from ui.export_summary import ExportSummaryDialog
-        invoices = self._db.get_all()
+        invoices = self._db.get_all(user_id=self._current_user["id"],
+                                     is_admin=self._current_user["role"] == "admin")
         has_confirmed = any(i.status in (InvoiceStatus.CONFIRMED, InvoiceStatus.MANUAL_DONE)
                             for i in invoices)
         if not has_confirmed:
@@ -441,4 +484,15 @@ class MainWindow(QMainWindow):
             InvoiceRecord.delete().execute()
             self._banner_widget.hide()
             self._refresh()
+
+    def _logout(self):
+        from PyQt6.QtWidgets import QMessageBox
+        reply = QMessageBox.question(self, "退出登录", "确认退出登录？")
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self.close()
+        import subprocess, sys
+        subprocess.Popen([sys.executable] + sys.argv)
+        from PyQt6.QtWidgets import QApplication
+        QApplication.instance().quit()
 

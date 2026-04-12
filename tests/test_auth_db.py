@@ -68,3 +68,36 @@ def test_update_user_password():
         db.update_user_password(uid, "new_hash")
         user = db.get_user_by_username("dave")
         assert user["password_hash"] == "new_hash"
+
+
+def test_get_all_filters_by_user():
+    from core.models import Invoice, InvoiceStatus, InvoiceSheet
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = Database(Path(tmpdir) / "test.db")
+        uid1 = db.create_user("u1", "u1@example.com", "hash", "user")
+        uid2 = db.create_user("u2", "u2@example.com", "hash", "user")
+        admin_id = db.create_user("admin", "admin@example.com", "hash", "admin")
+
+        def _inv(path, user_id):
+            inv = Invoice(
+                file_path=path, status=InvoiceStatus.PENDING,
+                sheet=InvoiceSheet.NORMAL, invoice_type="", invoice_code="",
+                invoice_number=path, issue_date="", goods_name="",
+                seller_name="", buyer_name="", buyer_tax_id="",
+                amount=0, tax_rate="", tax_amount=0, total_amount=0,
+            )
+            inv.user_id = user_id
+            return inv
+
+        db.save(_inv("/tmp/inv1.pdf", uid1))
+        db.save(_inv("/tmp/inv2.pdf", uid2))
+        db.save(_inv("/tmp/inv3.pdf", None))  # 历史数据
+
+        # 普通用户只看自己的
+        u1_invoices = db.get_all(user_id=uid1, is_admin=False)
+        assert len(u1_invoices) == 1
+        assert u1_invoices[0].file_path == "/tmp/inv1.pdf"
+
+        # 管理员看全部
+        admin_invoices = db.get_all(user_id=admin_id, is_admin=True)
+        assert len(admin_invoices) == 3

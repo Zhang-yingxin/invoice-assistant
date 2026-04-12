@@ -3,17 +3,18 @@ from PyQt6.QtCore import pyqtSignal
 
 
 class Sidebar(QWidget):
-    nav_changed = pyqtSignal(str)  # "import"|"import_folder"|"phone_upload"|"pending"|"done"|"failed"|"settings"
+    nav_changed = pyqtSignal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, role: str = "user", parent=None):
         super().__init__(parent)
+        self._role = role
         self.setFixedWidth(160)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 16, 8, 8)
         layout.setSpacing(4)
 
         self._btns = {}
-        for key, label in [
+        nav_items = [
             ("import", "导入发票"),
             ("import_folder", "批量导入文件夹"),
             ("phone_upload", "手机扫码上传"),
@@ -21,9 +22,12 @@ class Sidebar(QWidget):
             ("done", "已完成"),
             ("failed", "识别失败"),
             ("settings", "设置"),
-        ]:
+        ]
+        if role == "admin":
+            nav_items.append(("user_management", "用户管理"))
+
+        for key, label in nav_items:
             btn = QPushButton(label)
-            # 导入类按钮不需要 checkable
             if key in ("import", "import_folder", "phone_upload"):
                 btn.setCheckable(False)
             else:
@@ -36,7 +40,6 @@ class Sidebar(QWidget):
         self._btns["pending"].setChecked(True)
 
     def _on_click(self, key: str):
-        # 只有非导入类按钮才切换选中态
         if key not in ("import", "import_folder", "phone_upload"):
             for k, btn in self._btns.items():
                 if k not in ("import", "import_folder", "phone_upload"):
