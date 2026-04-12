@@ -70,8 +70,8 @@ class RegisterWindow(QDialog):
     def _submit(self):
         username = self._username.text().strip()
         email = self._email.text().strip()
-        password = self._password.text()
-        confirm = self._confirm.text()
+        password = self._password.text().strip()
+        confirm = self._confirm.text().strip()
 
         if not username or not email or not password:
             self._error_label.setText("所有字段均为必填项")
