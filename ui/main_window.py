@@ -24,13 +24,14 @@ class OCRWorker(QThread):
     ocr_error = pyqtSignal(str, str)   # file_path, error_msg
     done = pyqtSignal()
 
-    def __init__(self, files, backend, db, threshold, batch_id: str = ""):
+    def __init__(self, files, backend, db, threshold, batch_id: str = "", user_id: int = None):
         super().__init__()
         self.files = files
         self.backend = backend
         self.db = db
         self.threshold = threshold
         self.batch_id = batch_id
+        self.user_id = user_id
         self.cancelled = False
 
     def run(self):
@@ -47,6 +48,7 @@ class OCRWorker(QThread):
                 last_request_time = time.time()
                 inv = parse_file(fp, self.backend, self.threshold)
                 inv.batch_id = self.batch_id
+                inv.user_id = self.user_id
                 if inv.invoice_number and self.db.is_duplicate(inv.invoice_number, inv.issue_date):
                     inv.error_message = "DUPLICATE:该发票曾于历史批次处理过"
                 self.db.save(inv)
@@ -323,7 +325,8 @@ class MainWindow(QMainWindow):
         backend = self._get_backend()
         self._ocr_errors = []
         self._current_batch_id = str(uuid.uuid4())
-        self._worker = OCRWorker(to_process, backend, self._db, threshold, self._current_batch_id)
+        self._worker = OCRWorker(to_process, backend, self._db, threshold, self._current_batch_id,
+                                  user_id=self._current_user["id"])
         self._worker.progress.connect(lambda c, t: self._progress.show_processing(c, t))
         self._worker.invoice_ready.connect(lambda inv: self._refresh())
         self._worker.ocr_error.connect(self._on_ocr_error)
@@ -339,6 +342,7 @@ class MainWindow(QMainWindow):
             buyer_name="", buyer_tax_id="", amount=0, tax_rate="",
             tax_amount=0, total_amount=0, error_message=msg,
         )
+        inv.user_id = self._current_user["id"]
         self._db.save(inv)
         self._ocr_errors.append((file_path, msg))
         self._refresh()
