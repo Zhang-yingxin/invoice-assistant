@@ -1,8 +1,6 @@
-import io
 import socket
 import threading
-import time
-import cgi
+import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Callable, Optional
@@ -106,6 +104,34 @@ def _find_free_port(start: int = 8765, attempts: int = 5) -> int:
     raise OSError(f"无法找到可用端口（尝试了 {start}-{start+attempts-1}）")
 
 
+def _parse_multipart(body: bytes, boundary: bytes) -> tuple:
+    """简单解析 multipart/form-data，返回 (filename, file_data) 或 (None, None)。"""
+    delimiter = b"--" + boundary
+    parts = body.split(delimiter)
+    for part in parts:
+        if b"Content-Disposition" not in part:
+            continue
+        # 分离 headers 和 body
+        if b"\r\n\r\n" not in part:
+            continue
+        headers_raw, _, content = part.partition(b"\r\n\r\n")
+        # 去掉末尾 \r\n
+        content = content.rstrip(b"\r\n")
+        headers_str = headers_raw.decode("utf-8", errors="replace")
+        # 提取 filename
+        filename = None
+        for line in headers_str.splitlines():
+            if "Content-Disposition" in line and "filename=" in line:
+                for token in line.split(";"):
+                    token = token.strip()
+                    if token.startswith("filename="):
+                        filename = token[len("filename="):].strip().strip('"')
+                        break
+        if filename:
+            return filename, content
+    return None, None
+
+
 class _Handler(BaseHTTPRequestHandler):
     server: "PhoneServer"  # type: ignore[assignment]
 
@@ -134,41 +160,45 @@ class _Handler(BaseHTTPRequestHandler):
             return
 
         content_length = int(self.headers.get("Content-Length", 0))
+        if content_length == 0:
+            self._respond(400, "Content-Length 缺失")
+            return
         if content_length > MAX_FILE_SIZE:
             self._respond(413, "文件过大（超过 50MB）")
             return
 
-        environ = {
-            "REQUEST_METHOD": "POST",
-            "CONTENT_TYPE": content_type,
-            "CONTENT_LENGTH": str(content_length),
-        }
         body = self.rfile.read(content_length)
-        form = cgi.FieldStorage(
-            fp=io.BytesIO(body),
-            environ=environ,
-            keep_blank_values=True,
-        )
 
-        file_item = form["file"] if "file" in form else None
-        if file_item is None or not file_item.filename:
+        # 解析 boundary
+        boundary = None
+        for part in content_type.split(";"):
+            part = part.strip()
+            if part.startswith("boundary="):
+                boundary = part[len("boundary="):].strip().encode()
+                break
+        if not boundary:
+            self._respond(400, "缺少 boundary")
+            return
+
+        # 解析 multipart body
+        filename, file_data = _parse_multipart(body, boundary)
+        if filename is None or file_data is None:
             self._respond(400, "未找到文件字段")
             return
 
-        filename = Path(file_item.filename).name
+        filename = Path(filename).name
         suffix = Path(filename).suffix.lower()
         if suffix not in ALLOWED_EXTENSIONS:
             self._respond(400, f"不支持的格式 {suffix}，仅支持 jpg/png/pdf")
             return
 
-        file_data = file_item.file.read()
         if len(file_data) > MAX_FILE_SIZE:
             self._respond(413, "文件过大（超过 50MB）")
             return
 
-        ts = int(time.time() * 1000)
-        save_path = self.server.upload_dir / f"{ts}_{filename}"
+        save_path = self.server.upload_dir / f"{uuid.uuid4().hex[:8]}_{filename}"
         save_path.write_bytes(file_data)
+        # 注意：此回调在 HTTP 工作线程中执行，调用方需保证线程安全
         self.server.on_file_received(save_path)
         self._respond(200, "ok")
 
