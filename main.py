@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtWidgets import QApplication, QMessageBox, QDialog
 from store.db import Database
 from ui.main_window import MainWindow
 
@@ -55,7 +55,6 @@ def show_consent_dialog(db: Database) -> bool:
 
 
 def main():
-    # 开启高 DPI 缩放，Windows 高分屏下文字和图片更清晰
     from PyQt6.QtCore import Qt as _Qt
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         _Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
@@ -69,7 +68,49 @@ def main():
     if not show_consent_dialog(db):
         sys.exit(0)
 
-    window = MainWindow(db)
+    from core.auth import AuthService
+    auth = AuthService(db)
+
+    current_user = None
+
+    if not db.has_admin():
+        # 首次启动：初始化管理员
+        from ui.init_admin_window import InitAdminWindow
+        init_win = InitAdminWindow(db, auth)
+        created_users = []
+        init_win.admin_created.connect(lambda u: created_users.append(u))
+        if init_win.exec() != QDialog.DialogCode.Accepted or not created_users:
+            sys.exit(0)
+        current_user = created_users[0]
+    else:
+        # 正常启动：显示登录窗口
+        from ui.login_window import LoginWindow
+        from ui.register_window import RegisterWindow
+        from ui.reset_password_window import ResetPasswordWindow
+
+        while current_user is None:
+            login_win = LoginWindow(db, auth)
+            logged_in = []
+            login_win.login_success.connect(lambda u: logged_in.append(u))
+
+            def open_register():
+                reg = RegisterWindow(db, auth)
+                reg.exec()
+
+            def open_reset():
+                reset = ResetPasswordWindow(db, auth)
+                reset.exec()
+
+            login_win.register_requested.connect(open_register)
+            login_win.forgot_password_requested.connect(open_reset)
+
+            result = login_win.exec()
+            if result != QDialog.DialogCode.Accepted:
+                sys.exit(0)
+            if logged_in:
+                current_user = logged_in[0]
+
+    window = MainWindow(db, current_user)
     window.show()
     sys.exit(app.exec())
 
