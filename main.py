@@ -83,32 +83,37 @@ def main():
             sys.exit(0)
         current_user = created_users[0]
     else:
-        # 正常启动：显示登录窗口
-        from ui.login_window import LoginWindow
-        from ui.register_window import RegisterWindow
-        from ui.reset_password_window import ResetPasswordWindow
+        # 先检查自动登录凭据
+        from ui.login_window import check_auto_login
+        current_user = check_auto_login(db)
 
-        while current_user is None:
-            login_win = LoginWindow(db, auth)
-            logged_in = []
-            login_win.login_success.connect(lambda u: logged_in.append(u))
+        if current_user is None:
+            # 无有效凭据：显示登录窗口
+            from ui.login_window import LoginWindow
+            from ui.register_window import RegisterWindow
+            from ui.reset_password_window import ResetPasswordWindow
 
-            def open_register():
-                reg = RegisterWindow(db, auth)
-                reg.exec()
+            while current_user is None:
+                login_win = LoginWindow(db, auth)
+                logged_in = []
+                login_win.login_success.connect(lambda u: logged_in.append(u))
 
-            def open_reset():
-                reset = ResetPasswordWindow(db, auth)
-                reset.exec()
+                def open_register():
+                    reg = RegisterWindow(db, auth)
+                    reg.exec()
 
-            login_win.register_requested.connect(open_register)
-            login_win.forgot_password_requested.connect(open_reset)
+                def open_reset():
+                    reset = ResetPasswordWindow(db, auth)
+                    reset.exec()
 
-            result = login_win.exec()
-            if result != QDialog.DialogCode.Accepted:
-                sys.exit(0)
-            if logged_in:
-                current_user = logged_in[0]
+                login_win.register_requested.connect(open_register)
+                login_win.forgot_password_requested.connect(open_reset)
+
+                result = login_win.exec()
+                if result != QDialog.DialogCode.Accepted:
+                    sys.exit(0)
+                if logged_in:
+                    current_user = logged_in[0]
 
     window = MainWindow(db, current_user)
     window.show()

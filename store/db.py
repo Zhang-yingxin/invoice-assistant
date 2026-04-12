@@ -109,6 +109,46 @@ class Database:
             query = query.where(InvoiceRecord.user_id == user_id)
         return [self._to_invoice(r) for r in query]
 
+    def search(
+        self,
+        user_id: int = None,
+        is_admin: bool = False,
+        issue_date: str = "",
+        import_date_from: str = "",
+        import_date_to: str = "",
+        amount_min: float = None,
+        amount_max: float = None,
+        invoice_type: str = "",
+        buyer_name: str = "",
+        seller_name: str = "",
+        invoice_number: str = "",
+    ) -> List[Invoice]:
+        """按条件查询发票。空字符串/None 表示不限制该条件。"""
+        query = InvoiceRecord.select().order_by(InvoiceRecord.id.desc())
+        if not is_admin and user_id is not None:
+            query = query.where(InvoiceRecord.user_id == user_id)
+        # 开票日期：OCR 识别结果格式不统一，用模糊匹配
+        if issue_date:
+            query = query.where(InvoiceRecord.issue_date.contains(issue_date))
+        # 导入日期：created_at 格式固定为 "YYYY-MM-DD HH:MM:SS"，可精确比较
+        if import_date_from:
+            query = query.where(InvoiceRecord.created_at >= import_date_from)
+        if import_date_to:
+            query = query.where(InvoiceRecord.created_at <= import_date_to + " 23:59:59")
+        if amount_min is not None:
+            query = query.where(InvoiceRecord.total_amount >= amount_min)
+        if amount_max is not None:
+            query = query.where(InvoiceRecord.total_amount <= amount_max)
+        if invoice_type:
+            query = query.where(InvoiceRecord.invoice_type.contains(invoice_type))
+        if buyer_name:
+            query = query.where(InvoiceRecord.buyer_name.contains(buyer_name))
+        if seller_name:
+            query = query.where(InvoiceRecord.seller_name.contains(seller_name))
+        if invoice_number:
+            query = query.where(InvoiceRecord.invoice_number.contains(invoice_number))
+        return [self._to_invoice(r) for r in query]
+
     def is_duplicate(self, invoice_number: str, issue_date: str) -> bool:
         return InvoiceRecord.select().where(
             (InvoiceRecord.invoice_number == invoice_number) &
@@ -139,6 +179,14 @@ class Database:
             created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
         return record.id
+
+    def get_user_by_id(self, user_id: int):
+        """按 id 查找用户，不存在返回 None。"""
+        try:
+            r = UserRecord.get(UserRecord.id == user_id)
+            return self._to_user_dict(r)
+        except UserRecord.DoesNotExist:
+            return None
 
     def get_user_by_username(self, username: str):
         """按用户名查找用户，不存在返回 None。"""

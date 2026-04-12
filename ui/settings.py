@@ -2,10 +2,19 @@
 from PyQt6.QtWidgets import (
     QWidget, QFormLayout, QLineEdit, QPushButton,
     QDoubleSpinBox, QFileDialog, QMessageBox, QVBoxLayout,
-    QHBoxLayout, QLabel, QGroupBox
+    QHBoxLayout, QLabel, QGroupBox, QComboBox
 )
 from PyQt6.QtCore import pyqtSignal
 from store.db import Database
+
+_REMEMBER_OPTIONS = [
+    ("不记住（每次需登录）", 0),
+    ("30 天", 30),
+    ("60 天", 60),
+    ("180 天", 180),
+    ("365 天", 365),
+    ("永久", -1),
+]
 
 
 class SettingsPage(QWidget):
@@ -86,6 +95,26 @@ class SettingsPage(QWidget):
         smtp_form.addRow("授权码", self._smtp_password)
 
         outer.addWidget(smtp_group)
+
+        # 账号安全区块
+        acct_group = QGroupBox("账号安全")
+        acct_form = QFormLayout(acct_group)
+
+        self._remember_combo = QComboBox()
+        for label, _ in _REMEMBER_OPTIONS:
+            self._remember_combo.addItem(label)
+        saved_days = self._db.get_setting("remember_login_days", "0")
+        for i, (_, days) in enumerate(_REMEMBER_OPTIONS):
+            if str(days) == saved_days:
+                self._remember_combo.setCurrentIndex(i)
+                break
+        acct_form.addRow("免登录时长", self._remember_combo)
+
+        save_remember_btn = QPushButton("应用")
+        save_remember_btn.setFixedWidth(80)
+        save_remember_btn.clicked.connect(self._save_remember)
+        acct_form.addRow("", save_remember_btn)
+        outer.addWidget(acct_group)
 
         # 修改密码区块
         pw_group = QGroupBox("修改密码")
@@ -178,6 +207,20 @@ class SettingsPage(QWidget):
         self._set_readonly(True)
         self._edit_btn.setText("编辑")
         self.settings_saved.emit()
+
+    def _save_remember(self):
+        idx = self._remember_combo.currentIndex()
+        _, days = _REMEMBER_OPTIONS[idx]
+        self._db.set_setting("remember_login_days", str(days))
+        # 同步更新当前已有的自动登录凭据过期时间
+        uid_str = self._db.get_setting("auto_login_user_id", "")
+        if uid_str:
+            from ui.login_window import _save_auto_login
+            try:
+                _save_auto_login(self._db, int(uid_str), days)
+            except (ValueError, TypeError):
+                pass
+        QMessageBox.information(self, "免登录", "免登录设置已更新，下次登录时生效")
 
     def _change_password(self):
         if not self._current_user:

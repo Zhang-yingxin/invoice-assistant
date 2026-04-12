@@ -1,11 +1,21 @@
 # ui/login_window.py
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QLineEdit,
-    QPushButton, QLabel, QHBoxLayout
+    QPushButton, QLabel, QHBoxLayout, QComboBox
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 from store.db import Database
 from core.auth import AuthService
+
+# 免登录选项：显示文字 → 天数（0 = 不记住，-1 = 永久）
+_REMEMBER_OPTIONS = [
+    ("不记住", 0),
+    ("30 天", 30),
+    ("60 天", 60),
+    ("180 天", 180),
+    ("365 天", 365),
+    ("永久", -1),
+]
 
 
 class LoginWindow(QDialog):
@@ -39,6 +49,18 @@ class LoginWindow(QDialog):
         self._password.setPlaceholderText("密码")
         self._password.returnPressed.connect(self._do_login)
         form.addRow("密码", self._password)
+
+        # 免登录选择
+        self._remember_combo = QComboBox()
+        for label, _ in _REMEMBER_OPTIONS:
+            self._remember_combo.addItem(label)
+        # 默认选上次使用的选项
+        saved_days = db.get_setting("remember_login_days", "0")
+        for i, (_, days) in enumerate(_REMEMBER_OPTIONS):
+            if str(days) == saved_days:
+                self._remember_combo.setCurrentIndex(i)
+                break
+        form.addRow("免登录", self._remember_combo)
 
         layout.addLayout(form)
 
@@ -82,7 +104,55 @@ class LoginWindow(QDialog):
         result = self._auth.login(username, password)
         if result["success"]:
             self._error_label.setText("")
-            self.login_success.emit(result["user"])
+            user = result["user"]
+            # 保存免登录状态
+            idx = self._remember_combo.currentIndex()
+            _, days = _REMEMBER_OPTIONS[idx]
+            self._db.set_setting("remember_login_days", str(days))
+            _save_auto_login(self._db, user["id"], days)
+            self.login_success.emit(user)
             self.accept()
         else:
             self._error_label.setText(result["message"])
+
+
+def _save_auto_login(db: Database, user_id: int, days: int):
+    """保存自动登录凭据。days=0 清除，days=-1 永久，其他为天数。"""
+    import time
+    if days == 0:
+        db.set_setting("auto_login_user_id", "")
+        db.set_setting("auto_login_expire", "")
+    elif days == -1:
+        db.set_setting("auto_login_user_id", str(user_id))
+        db.set_setting("auto_login_expire", "0")  # 0 = 永久
+    else:
+        expire_ts = int(time.time()) + days * 86400
+        db.set_setting("auto_login_user_id", str(user_id))
+        db.set_setting("auto_login_expire", str(expire_ts))
+
+
+def check_auto_login(db: Database):
+    """检查是否有有效的自动登录凭据，有则返回用户 dict，否则返回 None。"""
+    import time
+    uid_str = db.get_setting("auto_login_user_id", "")
+    expire_str = db.get_setting("auto_login_expire", "")
+    if not uid_str:
+        return None
+    try:
+        user_id = int(uid_str)
+        expire_ts = int(expire_str)
+    except (ValueError, TypeError):
+        return None
+    # expire_ts == 0 表示永久
+    if expire_ts != 0 and time.time() > expire_ts:
+        # 已过期，清除
+        db.set_setting("auto_login_user_id", "")
+        db.set_setting("auto_login_expire", "")
+        return None
+    # 查找用户
+    user = db.get_user_by_id(user_id)
+    if user is None or not user.get("is_active", True):
+        db.set_setting("auto_login_user_id", "")
+        db.set_setting("auto_login_expire", "")
+        return None
+    return user

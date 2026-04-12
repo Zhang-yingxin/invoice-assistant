@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QDialog, QApplication
 )
 from PyQt6.QtCore import pyqtSignal, Qt
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QPixmap, QTransform
 from core.models import Invoice, InvoiceSheet, InvoiceStatus
 
 SHEET_OPTIONS = [s.value for s in InvoiceSheet]
@@ -25,26 +25,78 @@ class PreviewLabel(QLabel):
     def show_large(self):
         if not self._full_pixmap or self._full_pixmap.isNull():
             return
+
         screen = QApplication.primaryScreen()
         screen_rect = screen.availableGeometry()
-        max_w = int(screen_rect.width() * 0.8)
+        max_w = int(screen_rect.width() * 0.85)
         max_h = int(screen_rect.height() * 0.85)
 
-        scaled = self._full_pixmap.scaled(
-            max_w, max_h,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation
-        )
+        rotation = [0]
 
         dlg = QDialog(self.window())
         dlg.setWindowTitle("发票预览")
+        dlg.setStyleSheet("background: #1E1E1E;")
         dlg_layout = QVBoxLayout(dlg)
-        dlg_layout.setContentsMargins(0, 0, 0, 0)
+        dlg_layout.setContentsMargins(0, 0, 0, 8)
+        dlg_layout.setSpacing(6)
+
         lbl = QLabel()
-        lbl.setPixmap(scaled)
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        dlg_layout.addWidget(lbl)
-        dlg.resize(scaled.width(), scaled.height())
+        lbl.setStyleSheet("background: #1E1E1E;")
+        dlg_layout.addWidget(lbl, 1)
+
+        def _render():
+            pix = self._full_pixmap
+            if rotation[0] != 0:
+                pix = pix.transformed(
+                    QTransform().rotate(rotation[0]),
+                    Qt.TransformationMode.SmoothTransformation
+                )
+            scaled = pix.scaled(
+                max_w, max_h - 50,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            lbl.setPixmap(scaled)
+            dlg.resize(
+                min(scaled.width(), max_w),
+                min(scaled.height() + 50, max_h)
+            )
+
+        btn_bar = QWidget()
+        btn_bar.setStyleSheet("background: #2A2A2A;")
+        btn_h = QHBoxLayout(btn_bar)
+        btn_h.setContentsMargins(12, 4, 12, 4)
+        btn_h.setSpacing(10)
+
+        _btn_style = (
+            "QPushButton { color: #DDD; background: #3A3A3A; border: 1px solid #555; "
+            "border-radius: 4px; padding: 4px 18px; font-size: 13px; }"
+            "QPushButton:hover { background: #4A4A4A; color: #FFF; }"
+        )
+        ccw_btn = QPushButton("↺  逆时针90°")
+        ccw_btn.setStyleSheet(_btn_style)
+        cw_btn = QPushButton("↻  顺时针90°")
+        cw_btn.setStyleSheet(_btn_style)
+
+        def _rotate_cw():
+            rotation[0] = (rotation[0] + 90) % 360
+            _render()
+
+        def _rotate_ccw():
+            rotation[0] = (rotation[0] - 90) % 360
+            _render()
+
+        cw_btn.clicked.connect(_rotate_cw)
+        ccw_btn.clicked.connect(_rotate_ccw)
+
+        btn_h.addStretch()
+        btn_h.addWidget(ccw_btn)
+        btn_h.addWidget(cw_btn)
+        btn_h.addStretch()
+        dlg_layout.addWidget(btn_bar)
+
+        _render()
         dlg.exec()
 
 
@@ -189,8 +241,8 @@ class DetailPanel(QWidget):
         self._zoom_btn.hide()
         suffix = Path(inv.file_path).suffix.lower()
         if suffix in (".jpg", ".jpeg", ".png"):
-            pix = QPixmap(inv.file_path)
-            if not pix.isNull():
+            pix = self._load_image_with_exif(inv.file_path)
+            if pix and not pix.isNull():
                 self._preview.set_full_pixmap(pix)
                 self._preview.setPixmap(self._scale_pixmap(pix))
                 self._zoom_btn.show()
@@ -280,13 +332,32 @@ class DetailPanel(QWidget):
         scaled.setDevicePixelRatio(dpr)
         return scaled
 
+    def _load_image_with_exif(self, file_path: str) -> Optional[QPixmap]:
+        """加载图片并根据 EXIF 旋转信息自动修正方向。"""
+        try:
+            from PIL import Image, ImageOps
+            import io
+            img = Image.open(file_path)
+            # ImageOps.exif_transpose 自动处理 EXIF Orientation 标签
+            img = ImageOps.exif_transpose(img)
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            qpix = QPixmap()
+            qpix.loadFromData(buf.getvalue())
+            return qpix
+        except Exception:
+            # PIL 失败则回退到 QPixmap 直接加载
+            return QPixmap(file_path)
+
     def _load_pdf_preview(self, file_path: str):
         try:
             doc = fitz.open(file_path)
             page = doc[0]
             dpr = self._preview.devicePixelRatio()
-            # 渲染分辨率 = 显示尺寸 × DPR × 基础倍数(2x)
             scale = 2.0 * dpr
+            # fitz 渲染时自动应用 PDF 内嵌的 page.rotation，无需手动处理
             mat = fitz.Matrix(scale, scale)
             pix = page.get_pixmap(matrix=mat)
             img_bytes = pix.tobytes("png")
