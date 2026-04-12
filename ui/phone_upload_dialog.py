@@ -26,6 +26,7 @@ class PhoneUploadDialog(QDialog):
 
         self._tmp_dir = Path(tempfile.mkdtemp(prefix="ia_phone_"))
         self._uploaded: list[Path] = []
+        self._emitted = False
 
         self._server = PhoneServer(
             upload_dir=self._tmp_dir,
@@ -80,10 +81,10 @@ class PhoneUploadDialog(QDialog):
         qr = qrcode.QRCode(box_size=6, border=2)
         qr.add_data(url)
         qr.make(fit=True)
-        img = qr.make_image(fill_color="black", back_color="white")
+        img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
         buf = img.tobytes()
         w, h = img.size
-        qimage = QImage(buf, w, h, QImage.Format.Format_RGB888)
+        qimage = QImage(buf, w, h, w * 3, QImage.Format.Format_RGB888)
         return QPixmap.fromImage(qimage).scaled(
             size, size,
             Qt.AspectRatioMode.KeepAspectRatio,
@@ -102,11 +103,16 @@ class PhoneUploadDialog(QDialog):
         )
 
     def _on_done(self):
-        self._server.stop()
-        if self._uploaded:
-            self.files_uploaded.emit(list(self._uploaded))
+        paths = list(self._uploaded)   # 先快照
+        self._server.stop()            # 再停服务
+        if paths:
+            self._emitted = True
+            self.files_uploaded.emit(paths)
         self.accept()
 
     def closeEvent(self, event):
         self._server.stop()
+        if not self._emitted and self._tmp_dir.exists():
+            import shutil
+            shutil.rmtree(self._tmp_dir, ignore_errors=True)
         super().closeEvent(event)

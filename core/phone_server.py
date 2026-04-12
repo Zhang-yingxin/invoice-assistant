@@ -94,12 +94,13 @@ def _get_local_ip() -> str:
 
 def _find_free_port(start: int = 8765, attempts: int = 5) -> int:
     for port in range(start, start + attempts):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.bind(("", port))
             s.close()
             return port
         except OSError:
+            s.close()
             continue
     raise OSError(f"无法找到可用端口（尝试了 {start}-{start+attempts-1}）")
 
