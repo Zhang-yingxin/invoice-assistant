@@ -489,6 +489,16 @@ class MainWindow(QMainWindow):
             self._banner_widget.hide()
             self._refresh()
 
+    def closeEvent(self, event):
+        if getattr(self, "_logging_out", False):
+            event.accept()
+            return
+        reply = QMessageBox.question(self, "退出", "确认退出应用？")
+        if reply == QMessageBox.StandardButton.Yes:
+            event.accept()
+        else:
+            event.ignore()
+
     def _logout(self):
         from PyQt6.QtWidgets import QMessageBox
         reply = QMessageBox.question(self, "退出登录", "确认退出登录？")
@@ -497,6 +507,7 @@ class MainWindow(QMainWindow):
         # 清除自动登录凭据，确保下次需要重新登录
         self._db.set_setting("auto_login_user_id", "")
         self._db.set_setting("auto_login_expire", "")
+        self._logging_out = True
         self.close()
         import subprocess, sys
         subprocess.Popen([sys.executable] + sys.argv)
