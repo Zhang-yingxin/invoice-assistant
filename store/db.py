@@ -5,7 +5,7 @@ from typing import List
 
 from peewee import (
     SqliteDatabase, Model, CharField, FloatField,
-    TextField, AutoField
+    TextField, AutoField, BooleanField, IntegerField
 )
 
 from core.models import Invoice, InvoiceStatus, InvoiceSheet
@@ -35,6 +35,7 @@ class InvoiceRecord(Model):
     batch_id = CharField(null=True)
     error_message = TextField(null=True)
     created_at = CharField(null=True)
+    user_id = IntegerField(null=True)
 
     class Meta:
         database = _db
@@ -50,11 +51,25 @@ class SettingsRecord(Model):
         table_name = "settings"
 
 
+class UserRecord(Model):
+    id = AutoField()
+    username = CharField(unique=True)
+    email = CharField(unique=True)
+    password_hash = CharField()
+    role = CharField(default="user")   # "admin" | "user"
+    is_active = BooleanField(default=True)
+    created_at = CharField(null=True)
+
+    class Meta:
+        database = _db
+        table_name = "users"
+
+
 class Database:
     def __init__(self, db_path: Path):
         _db.init(str(db_path), pragmas={"journal_mode": "wal", "busy_timeout": 3000})
         _db.connect(reuse_if_open=True)
-        _db.create_tables([InvoiceRecord, SettingsRecord], safe=True)
+        _db.create_tables([InvoiceRecord, SettingsRecord, UserRecord], safe=True)
         self._migrate_schema()
         self._reset_processing_to_pending()
 
@@ -64,6 +79,8 @@ class Database:
         existing = {row[1] for row in cursor.fetchall()}
         if "created_at" not in existing:
             _db.execute_sql("ALTER TABLE invoices ADD COLUMN created_at VARCHAR(32)")
+        if "user_id" not in existing:
+            _db.execute_sql("ALTER TABLE invoices ADD COLUMN user_id INTEGER")
 
     def _reset_processing_to_pending(self):
         InvoiceRecord.update(status=InvoiceStatus.PENDING.value).where(
@@ -102,6 +119,56 @@ class Database:
 
     def set_setting(self, key: str, value: str):
         SettingsRecord.replace(key=key, value=value).execute()
+
+    def has_admin(self) -> bool:
+        return UserRecord.select().where(UserRecord.role == "admin").exists()
+
+    def create_user(self, username: str, email: str, password_hash: str, role: str = "user") -> int:
+        from datetime import datetime
+        record = UserRecord.create(
+            username=username,
+            email=email,
+            password_hash=password_hash,
+            role=role,
+            is_active=True,
+            created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        return record.id
+
+    def get_user_by_username(self, username: str):
+        try:
+            r = UserRecord.get(UserRecord.username == username)
+            return self._user_to_dict(r)
+        except UserRecord.DoesNotExist:
+            return None
+
+    def get_user_by_email(self, email: str):
+        try:
+            r = UserRecord.get(UserRecord.email == email)
+            return self._user_to_dict(r)
+        except UserRecord.DoesNotExist:
+            return None
+
+    def get_all_users(self) -> list:
+        return [self._user_to_dict(r) for r in UserRecord.select().order_by(UserRecord.id)]
+
+    def set_user_active(self, user_id: int, is_active: bool):
+        UserRecord.update(is_active=is_active).where(UserRecord.id == user_id).execute()
+
+    def update_user_password(self, user_id: int, password_hash: str):
+        UserRecord.update(password_hash=password_hash).where(UserRecord.id == user_id).execute()
+
+    @staticmethod
+    def _user_to_dict(r: UserRecord) -> dict:
+        return {
+            "id": r.id,
+            "username": r.username,
+            "email": r.email,
+            "password_hash": r.password_hash,
+            "role": r.role,
+            "is_active": r.is_active,
+            "created_at": r.created_at,
+        }
 
     @staticmethod
     def _to_dict(inv: Invoice) -> dict:
