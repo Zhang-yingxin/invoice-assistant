@@ -3,7 +3,7 @@ from PyQt6.QtCore import pyqtSignal
 
 
 class Sidebar(QWidget):
-    nav_changed = pyqtSignal(str)  # "import" | "import_folder" | "pending" | "done" | "failed" | "settings"
+    nav_changed = pyqtSignal(str)  # "import"|"import_folder"|"phone_upload"|"pending"|"done"|"failed"|"settings"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -16,6 +16,7 @@ class Sidebar(QWidget):
         for key, label in [
             ("import", "导入发票"),
             ("import_folder", "批量导入文件夹"),
+            ("phone_upload", "手机扫码上传"),
             ("pending", "待处理"),
             ("done", "已完成"),
             ("failed", "识别失败"),
@@ -23,7 +24,7 @@ class Sidebar(QWidget):
         ]:
             btn = QPushButton(label)
             # 导入类按钮不需要 checkable
-            if key in ("import", "import_folder"):
+            if key in ("import", "import_folder", "phone_upload"):
                 btn.setCheckable(False)
             else:
                 btn.setCheckable(True)
@@ -36,9 +37,9 @@ class Sidebar(QWidget):
 
     def _on_click(self, key: str):
         # 只有非导入类按钮才切换选中态
-        if key not in ("import", "import_folder"):
+        if key not in ("import", "import_folder", "phone_upload"):
             for k, btn in self._btns.items():
-                if k not in ("import", "import_folder"):
+                if k not in ("import", "import_folder", "phone_upload"):
                     btn.setChecked(k == key)
         self.nav_changed.emit(key)
 
