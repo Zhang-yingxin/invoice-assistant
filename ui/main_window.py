@@ -218,6 +218,8 @@ class MainWindow(QMainWindow):
             self._import_files()
         elif key == "import_folder":
             self._import_folder()
+        elif key == "phone_upload":
+            self._open_phone_upload()
         elif key == "settings":
             self._load_settings_page()
             self._stack.setCurrentIndex(1)
@@ -255,6 +257,12 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "无可用文件", "所选文件夹内没有找到 PDF/JPG/PNG 文件")
             return
         self._start_ocr(files)
+
+    def _open_phone_upload(self):
+        from ui.phone_upload_dialog import PhoneUploadDialog
+        dlg = PhoneUploadDialog(self)
+        dlg.files_uploaded.connect(self._start_ocr)
+        dlg.exec()
 
     def _start_ocr(self, file_paths: list):
         if self._worker and self._worker.isRunning():
