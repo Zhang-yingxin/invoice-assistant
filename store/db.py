@@ -121,10 +121,11 @@ class Database:
         SettingsRecord.replace(key=key, value=value).execute()
 
     def has_admin(self) -> bool:
+        """检查是否存在管理员账号。"""
         return UserRecord.select().where(UserRecord.role == "admin").exists()
 
     def create_user(self, username: str, email: str, password_hash: str, role: str = "user") -> int:
-        from datetime import datetime
+        """创建新用户，返回新用户的 id。"""
         record = UserRecord.create(
             username=username,
             email=email,
@@ -136,30 +137,35 @@ class Database:
         return record.id
 
     def get_user_by_username(self, username: str):
+        """按用户名查找用户，不存在返回 None。"""
         try:
             r = UserRecord.get(UserRecord.username == username)
-            return self._user_to_dict(r)
+            return self._to_user_dict(r)
         except UserRecord.DoesNotExist:
             return None
 
     def get_user_by_email(self, email: str):
+        """按邮箱查找用户，不存在返回 None。"""
         try:
             r = UserRecord.get(UserRecord.email == email)
-            return self._user_to_dict(r)
+            return self._to_user_dict(r)
         except UserRecord.DoesNotExist:
             return None
 
     def get_all_users(self) -> list:
-        return [self._user_to_dict(r) for r in UserRecord.select().order_by(UserRecord.id)]
+        """返回所有用户列表。"""
+        return [self._to_user_dict(r) for r in UserRecord.select().order_by(UserRecord.id)]
 
     def set_user_active(self, user_id: int, is_active: bool):
+        """设置用户的启用/禁用状态。"""
         UserRecord.update(is_active=is_active).where(UserRecord.id == user_id).execute()
 
     def update_user_password(self, user_id: int, password_hash: str):
+        """更新用户密码哈希。"""
         UserRecord.update(password_hash=password_hash).where(UserRecord.id == user_id).execute()
 
     @staticmethod
-    def _user_to_dict(r: UserRecord) -> dict:
+    def _to_user_dict(r: UserRecord) -> dict:
         return {
             "id": r.id,
             "username": r.username,

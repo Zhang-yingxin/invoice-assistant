@@ -40,3 +40,31 @@ def test_get_user_by_email():
         user = db.get_user_by_email("bob@example.com")
         assert user is not None
         assert user["username"] == "bob"
+
+
+def test_get_user_not_found_returns_none():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = Database(Path(tmpdir) / "test.db")
+        assert db.get_user_by_username("nonexistent") is None
+        assert db.get_user_by_email("nobody@example.com") is None
+
+
+def test_set_user_active():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = Database(Path(tmpdir) / "test.db")
+        uid = db.create_user("carol", "carol@example.com", "hash", "user")
+        db.set_user_active(uid, False)
+        user = db.get_user_by_username("carol")
+        assert user["is_active"] is False
+        db.set_user_active(uid, True)
+        user = db.get_user_by_username("carol")
+        assert user["is_active"] is True
+
+
+def test_update_user_password():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = Database(Path(tmpdir) / "test.db")
+        uid = db.create_user("dave", "dave@example.com", "old_hash", "user")
+        db.update_user_password(uid, "new_hash")
+        user = db.get_user_by_username("dave")
+        assert user["password_hash"] == "new_hash"
