@@ -24,3 +24,14 @@ def test_misc_no_vat():
 
 def test_unknown_defaults_normal():
     assert classify("", "044031900111") == InvoiceSheet.NORMAL
+
+
+def test_tollfee_invoice_no_code():
+    # 通行费电子普票：百度 InvoiceTypeOrg 返回 "电子发票(普通发票)"，InvoiceCode 为空
+    # 修复前：InvoiceType="通行费电子普票" + InvoiceCode="" 会错误归入杂票
+    assert classify("电子发票(普通发票)", "") == InvoiceSheet.NORMAL
+
+
+def test_invoice_type_abbreviation():
+    # 即使直接使用百度 InvoiceType 缩写（如"通行费电子普票"），也应归入普票
+    assert classify("通行费电子普票", "") == InvoiceSheet.NORMAL

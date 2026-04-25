@@ -29,7 +29,9 @@ def map_baidu_response(file_path: str, response: dict, confidence_threshold: flo
         except ValueError:
             return 0.0
 
-    invoice_type = get("InvoiceType")
+    # InvoiceTypeOrg 是百度返回的标准发票类型名称（如"电子发票(普通发票)"），
+    # InvoiceType 对特殊票据会返回缩写（如"通行费电子普票"），分类时优先用 InvoiceTypeOrg。
+    invoice_type = get("InvoiceTypeOrg") or get("InvoiceType")
     invoice_code = get("InvoiceCode")
     # 税率从 CommodityTaxRate 列表取第一行
     tax_rate_raw = wr.get("CommodityTaxRate", [])
