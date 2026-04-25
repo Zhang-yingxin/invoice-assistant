@@ -34,11 +34,27 @@ def export_to_excel(invoices: List[Invoice], output_path: Path):
         _write_header(ws, SPECIAL_NORMAL_HEADERS)
     _write_header(ws_misc, MISC_HEADERS)
 
+    def _sort_key(inv: Invoice) -> str:
+        """将开票日期统一转为 YYYY-MM-DD 字符串用于排序，解析失败的排到最后。"""
+        import re
+        d = inv.issue_date or ""
+        # 格式1: "2026年04月14日"
+        m = re.match(r"(\d{4})年(\d{2})月(\d{2})日", d)
+        if m:
+            return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+        # 格式2: "2026-04-14"
+        if re.match(r"\d{4}-\d{2}-\d{2}", d):
+            return d
+        return "9999-99-99"
+
+    sorted_invoices = sorted(
+        [inv for inv in invoices if inv.status in EXPORT_STATUSES],
+        key=_sort_key,
+    )
+
     counters = {"专票": 1, "普票": 1, "杂票": 1}
 
-    for inv in invoices:
-        if inv.status not in EXPORT_STATUSES:
-            continue
+    for inv in sorted_invoices:
         sheet_name = inv.sheet.value
         idx = counters[sheet_name]
         counters[sheet_name] += 1
